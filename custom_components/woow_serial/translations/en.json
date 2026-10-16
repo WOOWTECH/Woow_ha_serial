@@ -1,0 +1,251 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WOOW Serial",
+        "description": "What do you want to add?",
+        "menu_options": {
+          "local": "On-board serial port (RS485 / RS232)",
+          "external": "External device bound from another integration (e.g. HA-WF485-V3)",
+          "hub": "Admin panel (monitor, devices and send log in the sidebar)"
+        }
+      },
+      "local": {
+        "title": "Add a port",
+        "description": "Pick the RS485 / RS232 port to add. Ports that are already added are not listed.",
+        "data": {
+          "port": "Port"
+        }
+      },
+      "serial": {
+        "title": "Serial port {port}",
+        "description": "Driver: {driver}. The line settings must match the device on the other end.",
+        "data": {
+          "name": "Name",
+          "baudrate": "Baud rate",
+          "bytesize": "Data bits",
+          "parity": "Parity",
+          "stopbits": "Stop bits",
+          "frame_gap_ms": "Frame gap",
+          "echo_filter": "Filter own echo",
+          "loop_flush": "Flush through internal loopback on open",
+          "line_ending": "Line ending for text"
+        },
+        "data_description": {
+          "frame_gap_ms": "Silence that ends a received frame. 0 = automatic (24 character times, at least 20 ms; 25 ms at 9600 baud).",
+          "echo_filter": "Half-duplex RS485 hears what it sends; drop that copy.",
+          "loop_flush": "On open, push one byte round the UART's internal loopback so stale FIFO bytes never reach the wire.",
+          "line_ending": "Appended to text sent with the Send text entity or the text field of the service."
+        }
+      },
+      "external": {
+        "title": "External device",
+        "description": "Pick the device that carries the RS485 / RS232 line. An HA-WF485-V3 fills the next page in by itself. Leave it empty to choose the entities by hand.",
+        "data": {
+          "device_id": "Device"
+        }
+      },
+      "external_bind": {
+        "title": "Bind the external port",
+        "description": "Home Assistant sends by writing the bytes into the send entity, and treats every new value of the receive entity as a received frame.",
+        "data": {
+          "name": "Name",
+          "tx_entity": "Send entity",
+          "tx_format": "Send as",
+          "rx_entity": "Receive entity",
+          "rx_format": "Received values are",
+          "idle_values": "Idle values",
+          "line_ending": "Line ending for text",
+          "tx_echo_entity": "Sent-data entity (optional)",
+          "settings_entity": "Line settings entity (optional)",
+          "status_entity": "Online status entity (optional)"
+        },
+        "data_description": {
+          "tx_entity": "A text entity that transmits what is written into it (HA-WF485-V3: HEX data TX).",
+          "rx_entity": "An entity that shows each received frame (HA-WF485-V3: uart_net_hex).",
+          "idle_values": "Comma-separated values that mean no data (HA-WF485-V3: IDLE).",
+          "status_entity": "When this reads off, the port is shown as unavailable."
+        }
+      }
+    },
+    "error": {
+      "cannot_open": "Cannot open the port (missing or in use).",
+      "entity_missing": "This entity does not exist.",
+      "same_entity": "Sending and receiving need two different entities."
+    },
+    "abort": {
+      "already_configured": "This is already added.",
+      "no_ports": "No free RS485 / RS232 port found."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Port settings",
+        "description": "{port}",
+        "data": {
+          "baudrate": "Baud rate",
+          "bytesize": "Data bits",
+          "parity": "Parity",
+          "stopbits": "Stop bits",
+          "frame_gap_ms": "Frame gap",
+          "echo_filter": "Filter own echo",
+          "loop_flush": "Flush through internal loopback on open",
+          "line_ending": "Line ending for text",
+          "tx_entity": "Send entity",
+          "tx_format": "Send as",
+          "rx_entity": "Receive entity",
+          "rx_format": "Received values are",
+          "idle_values": "Idle values",
+          "tx_echo_entity": "Sent-data entity (optional)",
+          "settings_entity": "Line settings entity (optional)",
+          "status_entity": "Online status entity (optional)"
+        },
+        "data_description": {
+          "frame_gap_ms": "Silence that ends a received frame. 0 = automatic.",
+          "idle_values": "Comma-separated values that mean no data (HA-WF485-V3: IDLE)."
+        }
+      }
+    },
+    "error": {
+      "entity_missing": "This entity does not exist.",
+      "same_entity": "Sending and receiving need two different entities."
+    }
+  },
+  "selector": {
+    "parity": {
+      "options": {
+        "N": "None (N)",
+        "E": "Even (E)",
+        "O": "Odd (O)"
+      }
+    },
+    "line_ending": {
+      "options": {
+        "none": "None",
+        "cr": "CR (\\r)",
+        "lf": "LF (\\n)",
+        "crlf": "CR LF (\\r\\n)"
+      }
+    },
+    "tx_format": {
+      "options": {
+        "hex_space": "HEX with spaces (A5 5A 01)",
+        "hex": "HEX without spaces (A55A01)",
+        "text": "Text"
+      }
+    },
+    "rx_format": {
+      "options": {
+        "hex": "HEX",
+        "text": "Text"
+      }
+    }
+  },
+  "entity": {
+    "text": {
+      "send_hex": {
+        "name": "Send HEX"
+      },
+      "send_text": {
+        "name": "Send text"
+      }
+    },
+    "sensor": {
+      "rx_hex": {
+        "name": "Received HEX"
+      },
+      "rx_text": {
+        "name": "Received text"
+      },
+      "tx_hex": {
+        "name": "Last sent HEX"
+      },
+      "rx_bytes": {
+        "name": "Bytes received"
+      },
+      "tx_bytes": {
+        "name": "Bytes sent"
+      },
+      "line_errors": {
+        "name": "Line errors"
+      }
+    },
+    "event": {
+      "rx": {
+        "name": "Received",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "frame": "Frame"
+            }
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "send": {
+      "name": "Send (serial)",
+      "description": "Send bytes on an RS485 / RS232 port (on-board or bound), optionally waiting for the reply frame.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Port",
+          "description": "The serial port to send on."
+        },
+        "hex": {
+          "name": "HEX",
+          "description": "Bytes as hex, e.g. A5 5A 01 02."
+        },
+        "text": {
+          "name": "Text",
+          "description": "Text with \\r \\n \\xHH escapes; the port's line ending is appended."
+        },
+        "wait_ms": {
+          "name": "Wait for reply",
+          "description": "0 = do not wait. Otherwise return the next received frame (or timeout) as the response."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "{entry} is not a loaded WOOW Serial port."
+    },
+    "not_available": {
+      "message": "{name} is not available right now."
+    },
+    "send_failed": {
+      "message": "{name}: sending failed: {error}"
+    },
+    "too_long": {
+      "message": "{name}: too much data; the bound entity takes at most {limit} characters."
+    },
+    "no_payload": {
+      "message": "Nothing to send: give hex or text."
+    },
+    "bad_hex": {
+      "message": "Invalid HEX: {error}"
+    },
+    "bad_text": {
+      "message": "Invalid text: {error}"
+    },
+    "port_missing": {
+      "message": "{name}: its port is not available right now."
+    },
+    "not_mapped": {
+      "message": "{name}: no command is set for {action}."
+    },
+    "bad_template": {
+      "message": "Command {name} cannot be built: {error}"
+    },
+    "not_a_port": {
+      "message": "{name} is the admin panel, not a port."
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "button_pressed": "\"{subtype}\" pressed"
+    }
+  }
+}

@@ -1,0 +1,251 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WOOW 串口",
+        "description": "要新增什麼？",
+        "menu_options": {
+          "local": "本機串口（RS485／RS232）",
+          "external": "外接設備：綁定其他整合提供的埠（例如 HA-WF485-V3）",
+          "hub": "管理面板（側邊欄的監看、裝置和發送紀錄）"
+        }
+      },
+      "local": {
+        "title": "新增埠",
+        "description": "選擇要加入的 RS485／RS232 埠。已加入的埠不會列出。",
+        "data": {
+          "port": "埠"
+        }
+      },
+      "serial": {
+        "title": "串口 {port}",
+        "description": "驅動程式：{driver}。通訊參數要和對方設備一致。",
+        "data": {
+          "name": "名稱",
+          "baudrate": "鮑率",
+          "bytesize": "資料位元",
+          "parity": "同位檢查",
+          "stopbits": "停止位元",
+          "frame_gap_ms": "分段間隔",
+          "echo_filter": "濾掉自己送出的回音",
+          "loop_flush": "開埠時用內部迴路清空殘留",
+          "line_ending": "文字結尾"
+        },
+        "data_description": {
+          "frame_gap_ms": "多久沒收到資料就當成一筆結束。0＝自動（24 個字元時間，至少 20 ms；9600 時約 25 ms）。",
+          "echo_filter": "RS485 是半雙工，會收到自己送出的資料，開啟後自動濾掉。",
+          "loop_flush": "開埠時先在 UART 內部迴路送 1 byte，把卡在 FIFO 的殘留資料清掉，不會送到線上。",
+          "line_ending": "用「發送文字」或服務的 text 欄位時，自動加在結尾。"
+        }
+      },
+      "external": {
+        "title": "外接設備",
+        "description": "選擇接著 RS485／RS232 線路的設備。選 HA-WF485-V3 會自動帶入下一頁的設定；留空就自己選實體。",
+        "data": {
+          "device_id": "設備"
+        }
+      },
+      "external_bind": {
+        "title": "綁定外接埠",
+        "description": "Home Assistant 把資料寫進「發送實體」來送出；「接收實體」每出現一個新值，就當成收到一筆資料。",
+        "data": {
+          "name": "名稱",
+          "tx_entity": "發送實體",
+          "tx_format": "發送格式",
+          "rx_entity": "接收實體",
+          "rx_format": "接收內容格式",
+          "idle_values": "閒置值",
+          "line_ending": "文字結尾",
+          "tx_echo_entity": "已發送資料實體（選填）",
+          "settings_entity": "通訊參數實體（選填）",
+          "status_entity": "連線狀態實體（選填）"
+        },
+        "data_description": {
+          "tx_entity": "寫入內容就會送出的 text 實體（HA-WF485-V3：HEX data TX）。",
+          "rx_entity": "會顯示每筆收到的資料的實體（HA-WF485-V3：uart_net_hex）。",
+          "idle_values": "代表「沒有資料」的值，用逗號分隔（HA-WF485-V3：IDLE）。",
+          "status_entity": "這個實體是「關」的時候，這個埠會顯示為無法使用。"
+        }
+      }
+    },
+    "error": {
+      "cannot_open": "打不開這個埠（不存在或正被其他程式使用）。",
+      "entity_missing": "找不到這個實體。",
+      "same_entity": "發送和接收要用兩個不同的實體。"
+    },
+    "abort": {
+      "already_configured": "已經加入過了。",
+      "no_ports": "找不到還沒加入的 RS485／RS232 埠。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "埠設定",
+        "description": "{port}",
+        "data": {
+          "baudrate": "鮑率",
+          "bytesize": "資料位元",
+          "parity": "同位檢查",
+          "stopbits": "停止位元",
+          "frame_gap_ms": "分段間隔",
+          "echo_filter": "濾掉自己送出的回音",
+          "loop_flush": "開埠時用內部迴路清空殘留",
+          "line_ending": "文字結尾",
+          "tx_entity": "發送實體",
+          "tx_format": "發送格式",
+          "rx_entity": "接收實體",
+          "rx_format": "接收內容格式",
+          "idle_values": "閒置值",
+          "tx_echo_entity": "已發送資料實體（選填）",
+          "settings_entity": "通訊參數實體（選填）",
+          "status_entity": "連線狀態實體（選填）"
+        },
+        "data_description": {
+          "frame_gap_ms": "多久沒收到資料就當成一筆結束。0＝自動。",
+          "idle_values": "代表「沒有資料」的值，用逗號分隔（HA-WF485-V3：IDLE）。"
+        }
+      }
+    },
+    "error": {
+      "entity_missing": "找不到這個實體。",
+      "same_entity": "發送和接收要用兩個不同的實體。"
+    }
+  },
+  "selector": {
+    "parity": {
+      "options": {
+        "N": "無（N）",
+        "E": "偶同位（E）",
+        "O": "奇同位（O）"
+      }
+    },
+    "line_ending": {
+      "options": {
+        "none": "不加",
+        "cr": "CR（\\r）",
+        "lf": "LF（\\n）",
+        "crlf": "CR LF（\\r\\n）"
+      }
+    },
+    "tx_format": {
+      "options": {
+        "hex_space": "HEX，有空格（A5 5A 01）",
+        "hex": "HEX，無空格（A55A01）",
+        "text": "文字"
+      }
+    },
+    "rx_format": {
+      "options": {
+        "hex": "HEX",
+        "text": "文字"
+      }
+    }
+  },
+  "entity": {
+    "text": {
+      "send_hex": {
+        "name": "發送 HEX"
+      },
+      "send_text": {
+        "name": "發送文字"
+      }
+    },
+    "sensor": {
+      "rx_hex": {
+        "name": "接收 HEX"
+      },
+      "rx_text": {
+        "name": "接收文字"
+      },
+      "tx_hex": {
+        "name": "最後發送 HEX"
+      },
+      "rx_bytes": {
+        "name": "接收位元組"
+      },
+      "tx_bytes": {
+        "name": "發送位元組"
+      },
+      "line_errors": {
+        "name": "線路錯誤"
+      }
+    },
+    "event": {
+      "rx": {
+        "name": "收到資料",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "frame": "資料"
+            }
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "send": {
+      "name": "發送（串口）",
+      "description": "從 RS485／RS232 埠（本機或外接綁定）送出資料，可以等待對方回覆。",
+      "fields": {
+        "config_entry_id": {
+          "name": "埠",
+          "description": "要從哪個串口送出。"
+        },
+        "hex": {
+          "name": "HEX",
+          "description": "十六進位資料，例如 A5 5A 01 02。"
+        },
+        "text": {
+          "name": "文字",
+          "description": "可用 \\r \\n \\xHH 跳脫字元，會自動加上這個埠設定的文字結尾。"
+        },
+        "wait_ms": {
+          "name": "等待回覆",
+          "description": "0＝不等。否則把下一筆收到的資料（或逾時）當作回應傳回。"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "{entry} 不是已載入的 WOOW 串口埠。"
+    },
+    "not_available": {
+      "message": "{name} 目前無法使用。"
+    },
+    "send_failed": {
+      "message": "{name}：發送失敗：{error}"
+    },
+    "too_long": {
+      "message": "{name}：資料太長，綁定的實體最多只能放 {limit} 個字元。"
+    },
+    "no_payload": {
+      "message": "沒有要送的資料：請填 HEX 或文字。"
+    },
+    "bad_hex": {
+      "message": "HEX 格式錯誤：{error}"
+    },
+    "bad_text": {
+      "message": "文字格式錯誤：{error}"
+    },
+    "port_missing": {
+      "message": "{name}：所在的埠目前無法使用。"
+    },
+    "not_mapped": {
+      "message": "{name}：「{action}」沒有對應的指令。"
+    },
+    "bad_template": {
+      "message": "指令「{name}」無法組成：{error}"
+    },
+    "not_a_port": {
+      "message": "{name} 是管理面板，不是埠。"
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "button_pressed": "「{subtype}」按下"
+    }
+  }
+}

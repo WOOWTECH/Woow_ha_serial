@@ -1,0 +1,23 @@
+{
+  "name": "woow-serial-frontend",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Sidebar panel of the WOOW Serial Home Assistant integration.",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c rollup.config.mjs",
+    "watch": "rollup -c rollup.config.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "15.3.1",
+    "@rollup/plugin-terser": "0.4.4",
+    "@rollup/plugin-typescript": "12.1.2",
+    "rollup": "4.34.8",
+    "tslib": "2.8.1",
+    "typescript": "5.7.3"
+  },
+  "dependencies": {
+    "lit": "3.2.1"
+  }
+}

@@ -1,0 +1,24 @@
+send:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: woow_serial
+    hex:
+      example: "A5 5A 01 02"
+      selector:
+        text:
+    text:
+      example: "PWR ON\\r"
+      selector:
+        text:
+    wait_ms:
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 60000
+          step: 10
+          unit_of_measurement: ms
+          mode: box
