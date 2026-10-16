@@ -429,3 +429,28 @@ def test_joined_frames_are_taken_apart():
     mgr.on_frame(BusFrame("p1", "rx", b"\x99\x98" + press(1)))  # unknown bytes in front: no guessing
     assert presses() == []
     assert mgr.split("p1", press(1)) == [press(1)]
+
+
+def test_translations_follow_hassfest_placeholder_rules():
+    """hassfest: {…} in a translation is a placeholder and must be an identifier, never inside single quotes.
+    Service texts carry none at all (the frontend would try to fill them in): template syntax lives in the
+    services.yaml examples and in describe."""
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).parents[1] / "custom_components" / "woow_serial" / "translations"
+
+    def strings(node, path=""):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield from strings(value, f"{path}.{key}" if path else key)
+        elif isinstance(node, str):
+            yield path, node
+
+    for file in root.glob("*.json"):
+        for path, text in strings(json.loads(file.read_text(encoding="utf-8"))):
+            for inner in re.findall(r"\{([^{}]*)\}", text):
+                assert re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", inner), f"{file.name} {path}: {{{inner}}}"
+                assert not path.startswith("services."), f"{file.name} {path}: a placeholder in a service text"
+            assert not re.search(r"'\{\w+\}'", text), f"{file.name} {path}: placeholder in single quotes"

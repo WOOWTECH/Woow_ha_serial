@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1 — 2026-10-16
+
+- WOOWTECH brand images (`brand/`): Home Assistant 2026.x shows a custom integration's own icon and logo.
+- Service field descriptions no longer contain template syntax in braces, which hassfest reads as placeholders; the syntax stays in the fields' examples and in `describe`.
+
 ## 0.5.0 — 2026-10-16
 
 Built for AI agents, with a template library checked against real protocols.

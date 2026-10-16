@@ -177,7 +177,8 @@ preview_command:
   fields:
     payload:
       name: Template
-      description: Command template, e.g. 55 {addr} 03 04 {value:u8} {crc16_modbus} or VOL {value:02d}\r.
+      description: 'Command template as in a device definition, HEX or text: the example shows the syntax, describe
+        explains it.'
       required: true
       example: 55 {addr} 03 04 {value:u8} {crc16_modbus}
       selector:
@@ -193,13 +194,14 @@ preview_command:
           - text
     params:
       name: Parameters
-      description: 'Device parameters as an object of HEX strings, e.g. {"addr": "01 02"}.'
+      description: 'Device parameters: an object of name and value (HEX for HEX templates, text for text ones),
+        as in the example.'
       example: '{"addr": "01 02"}'
       selector:
         object: null
     value:
       name: Value
-      description: The {value} to use (device units).
+      description: The value a template's value field takes, in device units.
       example: 50
       selector:
         number:
@@ -213,7 +215,8 @@ test_pattern:
   fields:
     pattern:
       name: Pattern
-      description: Receive pattern, e.g. 55 {addr} 01 02 {pos:u8} {crc16_modbus}, or a regular expression for text.
+      description: 'Receive pattern as in a device definition (HEX, or a regular expression for text): the example
+        shows the syntax.'
       required: true
       example: 55 {addr} 01 02 {pos:u8} {crc16_modbus}
       selector:
@@ -237,7 +240,8 @@ test_pattern:
           - text
     params:
       name: Parameters
-      description: 'Device parameters as an object of HEX strings, e.g. {"addr": "01 02"}.'
+      description: 'Device parameters: an object of name and value (HEX for HEX templates, text for text ones),
+        as in the example.'
       example: '{"addr": "01 02"}'
       selector:
         object: null
@@ -335,7 +339,8 @@ create_from_template:
         text: null
     params:
       name: Parameters
-      description: 'Device parameters as an object of HEX strings, e.g. {"addr": "01 02"}.'
+      description: 'The template''s parameters, usually the device address: an object of name and value as in the
+        example. list_templates shows each template''s parameters.'
       example: '{"addr": "01 02"}'
       selector:
         object: null
@@ -383,7 +388,7 @@ run_command:
         text: null
     value:
       name: Value
-      description: The {value} for commands that take one (device units).
+      description: The value for commands that take one, in device units.
       example: 30
       selector:
         number:

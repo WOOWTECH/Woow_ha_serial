@@ -303,7 +303,7 @@
       "fields": {
         "payload": {
           "name": "範本",
-          "description": "指令範本，例如 55 {addr} 03 04 {value:u8} {crc16_modbus} 或 VOL {value:02d}\\r。"
+          "description": "指令範本，寫法和裝置定義相同（HEX 或文字）：語法見範例，詳細說明見 describe。"
         },
         "format": {
           "name": "格式",
@@ -311,11 +311,11 @@
         },
         "params": {
           "name": "參數",
-          "description": "裝置參數，物件格式、值為 HEX，例如 {\"addr\": \"01 02\"}。"
+          "description": "裝置參數：名稱對應值的物件（HEX 範本填 HEX，文字範本填文字），寫法見範例。"
         },
         "value": {
           "name": "數值",
-          "description": "要代入 {value} 的值（設備單位）。"
+          "description": "範本裡數值欄位要代入的值（設備單位）。"
         }
       }
     },
@@ -325,7 +325,7 @@
       "fields": {
         "pattern": {
           "name": "樣式",
-          "description": "接收樣式，例如 55 {addr} 01 02 {pos:u8} {crc16_modbus}；文字格式用正規表示式。"
+          "description": "接收樣式，寫法和裝置定義相同（HEX；文字格式用正規表示式）：語法見範例。"
         },
         "port": {
           "name": "埠",
@@ -337,7 +337,7 @@
         },
         "params": {
           "name": "參數",
-          "description": "裝置參數，物件格式、值為 HEX，例如 {\"addr\": \"01 02\"}。"
+          "description": "裝置參數：名稱對應值的物件（HEX 範本填 HEX，文字範本填文字），寫法見範例。"
         }
       }
     },
@@ -401,7 +401,7 @@
         },
         "params": {
           "name": "參數",
-          "description": "裝置參數，物件格式、值為 HEX，例如 {\"addr\": \"01 02\"}。"
+          "description": "範本的參數，通常是設備位址：名稱對應值的物件，寫法見範例。各範本有哪些參數可以用 list_templates 查。"
         },
         "note": {
           "name": "說明",
@@ -437,7 +437,7 @@
         },
         "value": {
           "name": "數值",
-          "description": "需要數值的指令要代入的 {value}（設備單位）。"
+          "description": "需要數值的指令要代入的值（設備單位）。"
         },
         "note": {
           "name": "說明",
