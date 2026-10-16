@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1 — 2026-10-16
+
+- Parity choices use lowercase translation keys (n / e / o), as hassfest requires; stored settings are unchanged (N / E / O).
+
 ## 0.4.0 — 2026-10-16
 
 First public release.

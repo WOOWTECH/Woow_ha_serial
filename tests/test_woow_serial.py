@@ -78,7 +78,9 @@ def test_forms_and_service_schema():
     schema = cf.serial_schema(vals, True)
     probatio.to_field_list(schema, custom_serializer=cv.custom_serializer)
     form = {k: (str(v) if k in ("baudrate", "bytesize", "stopbits") else v) for k, v in vals.items()}
-    assert cf.coerce(schema(form))["baudrate"] == 9600
+    form["parity"] = "n"  # selector keys are lowercase; the stored value is uppercase
+    stored = cf.coerce(schema(form))
+    assert stored["baudrate"] == 9600 and stored["parity"] == "N"
     for with_name in (True, False):
         vals = {**EXTERNAL_DEFAULTS, "name": "WF485", "tx_entity": "text.x_hex_data_tx", "rx_entity": "sensor.x_uart_net_hex"}
         fields = probatio.to_field_list(cf.external_schema(vals, with_name), custom_serializer=cv.custom_serializer)

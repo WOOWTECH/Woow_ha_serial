@@ -115,9 +115,9 @@
   "selector": {
     "parity": {
       "options": {
-        "N": "None (N)",
-        "E": "Even (E)",
-        "O": "Odd (O)"
+        "n": "None (N)",
+        "e": "Even (E)",
+        "o": "Odd (O)"
       }
     },
     "line_ending": {

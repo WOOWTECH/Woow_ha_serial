@@ -140,7 +140,8 @@ def serial_schema(values: dict[str, Any], with_name: bool) -> vol.Schema:
     fields.update({
         vol.Required(CONF_BAUDRATE, default=str(values[CONF_BAUDRATE])): _select([str(b) for b in BAUDRATES]),
         vol.Required(CONF_BYTESIZE, default=str(values[CONF_BYTESIZE])): _select(["8", "7"], dropdown=False),
-        vol.Required(CONF_PARITY, default=values[CONF_PARITY]): _select(["N", "E", "O"], "parity", False),
+        # Translation keys must be lowercase (hassfest); the stored value stays N / E / O (see coerce).
+        vol.Required(CONF_PARITY, default=str(values[CONF_PARITY]).lower()): _select(["n", "e", "o"], "parity", False),
         vol.Required(CONF_STOPBITS, default=str(values[CONF_STOPBITS])): _select(["1", "2"], dropdown=False),
         vol.Required(CONF_FRAME_GAP, default=values[CONF_FRAME_GAP]): _number(0, 5000, 1, "ms"),
         vol.Required(CONF_ECHO_FILTER, default=values[CONF_ECHO_FILTER]): BooleanSelector(),
@@ -178,6 +179,8 @@ def coerce(data: dict[str, Any]) -> dict[str, Any]:
     for key in _INTS:
         if key in out:
             out[key] = int(float(out[key]))
+    if CONF_PARITY in out:
+        out[CONF_PARITY] = str(out[CONF_PARITY]).upper()
     return out
 
 

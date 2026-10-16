@@ -40,6 +40,7 @@ for port in ports:
     schema = cf.serial_schema(vals, True)
     fields = probatio.to_field_list(schema, custom_serializer=cv.custom_serializer)
     form = {k: (str(v) if k in ("baudrate", "bytesize", "stopbits") else v) for k, v in vals.items()}
+    form["parity"] = form["parity"].lower()
     print(f"  {port}: {len(fields)} form fields -> {cf.coerce(schema(form))}")
 for with_name in (True, False):
     vals = {**EXTERNAL_DEFAULTS, "name": "WF485", "tx_entity": "text.x_hex_data_tx", "rx_entity": "sensor.x_uart_net_hex"}

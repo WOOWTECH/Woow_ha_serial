@@ -38,6 +38,8 @@ def _submit(flow, values):
     """Fill a form with the values it asks for (selects as strings)."""
     names = {f["name"] for f in flow["data_schema"]}
     data = {k: (str(v) if k in STRINGS else v) for k, v in values.items() if k in names}
+    if "parity" in data:  # selector keys are lowercase since 0.4.1
+        data["parity"] = str(data["parity"]).lower()
     return rest("POST", f"/config/config_entries/flow/{flow['flow_id']}", data)
 
 
