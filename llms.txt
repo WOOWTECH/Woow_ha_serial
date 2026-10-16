@@ -1,0 +1,106 @@
+# WOOW Serial (woow_serial)
+
+> Home Assistant integration that turns RS485 / RS232 equipment (curtain motors, relays, sensors, projectors,
+> AV receivers, HDMI matrices, wall keypads) into Home Assistant devices. Everything people do in its panel,
+> an AI agent can do through Home Assistant services; people review the agent's work in the panel's
+> Activity tab. Agents act without asking for confirmation and leave a note with every change.
+
+## Connecting
+
+- ha-mcp: call the services with `ha_call_service` (domain `woow_serial`). Always pass `return_response: true`:
+  read services refuse calls without it, and change services only return their result with it.
+  `ha_list_services` with domain `woow_serial` lists the services with their fields.
+- Home Assistant's MCP server (mcp_server, admin): the same services are tools of the LLM API "WOOW Serial",
+  named `woow-serial__<service>` when the server offers all LLM APIs, or plain `<service>` at `/api/mcp/woow_serial`.
+- Errors are readable messages (unknown port / device / command lists what exists; bad input says which field).
+  `save_device` and `create_from_template` return `{"ok": false, "error": {code, ...}}` for a definition
+  that cannot be saved: fix the named item and send it again.
+- Configuration changes (save_device, create_from_template, delete_device, learn_*) need an admin user.
+
+## Workflow
+
+1. `describe` — workflow, device types and their actions, definition fields, template syntax, checksums,
+   current ports, templates and devices. Call it first.
+2. `list_ports` — on-board UARTs (`RS485-1` = /dev/ttySC0, `RS232` = /dev/ttyAMA0 …) and bound external
+   devices (`WF485 f507a4` …), with line settings and availability.
+3. Known equipment: `list_templates`, then `create_from_template` {template, port, name, params, note}.
+   Compare the returned `port_settings.template_expects` with the port's settings (baud rate!).
+4. Unknown equipment: `get_monitor` {port} shows frames heard per port; `listen` {port, timeout} or
+   `learn_command` / `learn_button` {device, name} catch the next frame while a person presses the original
+   remote or keypad. Then `save_device` with commands, actions, rules, sensors, buttons.
+5. Check before saving: `preview_command` {payload, params, value} renders a command;
+   `test_pattern` {pattern, port, params} tries a receive pattern on the frames the monitor holds.
+6. Operate: the device's entities (cover.open_cover, light.turn_on, switch.turn_on, media_player.select_source,
+   select.select_option …) or `run_command` {device, command, value}. `send` {port, hex|text, wait_ms, expect}
+   talks to a port directly.
+7. Verify: `get_device` (state), `get_send_log` (did the equipment answer? which other port heard it?),
+   `get_activity` (what changed, by whom, why).
+
+Ports, devices and commands can be named by name instead of id everywhere, also inside a definition
+(`actions: {"open": "Open"}`, a button's `target: "Living room curtain"`).
+
+## Built-in templates
+
+dooya_rs485_curtain (cover, 9600, addr "FE FE"), aok_rs485_curtain (cover, 2400, id "01", ch "01 00"),
+waveshare_modbus_relay (switch per channel, addr "01", coil "00 00"…"00 07"), xymd02_modbus_th (temperature
+and humidity sensors, addr "01"), epson_escvp21_projector, benq_rs232_projector (115200), denon_marantz_avr,
+extron_sis_matrix_output (select, output "2"), blackbird_hdmi_matrix_output (select, output "1").
+Each was checked byte for byte against the maker's documented frames. Local templates go in
+`<config>/woow_serial/templates/*.json` (same format; a local id overrides a built-in one).
+
+## Device definition (save_device)
+
+```json
+{
+  "name": "Living room curtain", "type": "cover", "port": "RS485-1", "params": {"addr": "0A 0B"},
+  "commands": [
+    {"name": "Open", "payload": "55 {addr} 03 01 {crc16_modbus}", "then": "Read", "then_ms": 1500},
+    {"name": "Close", "payload": "55 {addr} 03 02 {crc16_modbus}", "then": "Read", "then_ms": 1500},
+    {"name": "Stop", "payload": "55 {addr} 03 03 {crc16_modbus}", "then": "Read", "then_ms": 800},
+    {"name": "Position", "payload": "55 {addr} 03 04 {value:u8} {crc16_modbus}", "then": "Read"},
+    {"name": "Read", "payload": "55 {addr} 01 02 01 {crc16_modbus}"}
+  ],
+  "actions": {"open": "Open", "close": "Close", "stop": "Stop", "set_position": "Position"},
+  "rules": [{"pattern": "55 {addr} 01 01 {pos:u8} {crc16_modbus}", "field": "position", "value": "{pos}"}],
+  "poll_command": "Read", "poll_interval": 10
+}
+```
+
+- types and actions: switch (turn_on, turn_off), light (+ set_brightness), cover (open, close, stop,
+  set_position), media_player (turn_on, turn_off, volume_up, volume_down, set_volume, mute_on, mute_off, play,
+  pause, stop, next, previous; `options` are sources), select (`options`), keypad (`buttons`), other (sensors).
+- `ranges`: {brightness|position|volume: [device value at 0 %, at 100 %]}; [100, 0] reverses (A-OK motors).
+  A position or brightness read back outside the range (e.g. FF = not calibrated) is ignored.
+- `wait_ms` on every command the equipment answers (Modbus, most RS485 motors, RS232 AV gear): the port is held
+  from the request until the answer arrives (or wait_ms passes), so a following request cannot collide with the
+  answer on a half-duplex RS485 line. The built-in templates do this.
+- `then` / `then_ms`: a follow-up command, usually a query, for equipment that only acknowledges a setting.
+- `reply_to` on a rule or sensor: only the answer to that command counts. Use it for Modbus reads: the answer
+  does not name the register, so channel 1 must not take channel 2's answer.
+- Fields with rules wait for the device; fields without rules follow the command optimistically.
+- keypad buttons: {name, pattern, debounce_ms=300, target?, action?, value?}; action is toggle, one of the
+  target's actions, `option:<name>` or `command:<name>`. A press fires `woow_serial_button` and a device trigger.
+
+## Command templates and receive patterns
+
+- HEX: bytes as printed in protocol sheets; `{param}` inserts a parameter; `{value:u8|s8|u16|u16le|s16|s16le|
+  u24|u32|u32le|s32|s32le|bcd|bcd2}` the action's value in device units; `{crc16_modbus}` (or crc16_ccitt,
+  crc16_xmodem, sum16, crc8, crc8_maxim, xor8, sum8, sum8_neg) a checksum over the bytes before it;
+  `{xor8@1}` starts at byte 2 (skips a header).
+- Text: `PWR ON\r`, escapes `\r \n \t \xHH`, `{value:02d}` Python format, `{output}` a parameter (text).
+- Receive (HEX): `??` any byte, `{name:type}` captures a number, `{param}` must match, a checksum must be
+  valid, `*` at the end accepts the rest; the whole frame must match.
+- Receive (text): a regular expression searched in the frame, named groups `(?P<v>\d+)` capture,
+  `{param}` stands for a parameter's text.
+
+## Pitfalls
+
+- Line speed: each port has one; templates say what the equipment expects (A-OK 2400, BenQ up to 115200).
+- RS485 is half duplex: equipment that sends by itself (keypads) can collide with polling; keep polls modest.
+- An HA-WF485-V3 joins frames less than ~0.1 s apart and shows a repeated identical frame only after its sensor
+  went back to IDLE (~0.35 s). WOOW Serial splits a joined frame again when it is made entirely of known frames
+  (the port's HEX patterns, our own recent sends); fixed-length HEX patterns with a checksum make this reliable.
+  Waits on external ports get 0.5 s extra for the trip through the other integration.
+- `send` with `wait_ms` returns the next frame on the port, which on a busy line may be someone else's: give
+  `expect` (a receive pattern) to wait for the right one; its captures are returned.
+- Give every change a short `note` in the user's language; it is shown in the Activity tab.

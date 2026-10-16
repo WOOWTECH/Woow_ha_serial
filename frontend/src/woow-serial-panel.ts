@@ -6,6 +6,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 
 import {
+  Activity,
   Api,
   Device,
   DeviceState,
@@ -17,6 +18,7 @@ import {
   PortInfo,
   Row,
   Sent,
+  TemplateSummary,
   define,
   errorText,
   newId,
@@ -24,13 +26,15 @@ import {
 import { blankDevice, rowAsCommand, rowAsPattern } from "./device-util";
 import { Key, Translate, explain, makeTranslate } from "./i18n";
 import { shared } from "./styles";
+import "./views/activity";
 import "./views/devices";
 import "./views/monitor";
 import "./views/overview";
 import "./views/sendlog";
 
-type Tab = "overview" | "devices" | "monitor" | "sendlog";
-const TABS: Tab[] = ["overview", "devices", "monitor", "sendlog"];
+type Tab = "overview" | "devices" | "monitor" | "sendlog" | "activity";
+const TABS: Tab[] = ["overview", "devices", "monitor", "sendlog", "activity"];
+const ACTIVITY_KEEP = 500;
 const LIVE_KEEP = 300;
 const KIND_ORDER: Record<string, number> = { serial: 0, external: 1 };
 const MENU = "M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z";
@@ -52,6 +56,8 @@ export class WoowBusPanel extends LitElement {
   @state() private deviceTypes: Record<string, DeviceType> = {};
   @state() private valueActions: Record<string, string> = {};
   @state() private openDevice: Device | null = null;
+  @state() private activity: Activity[] = [];
+  @state() private templates: TemplateSummary[] = [];
   @state() private live: LiveFrame[] = [];
   @state() private dropped = 0;
   @state() private paused = false;
@@ -206,6 +212,8 @@ export class WoowBusPanel extends LitElement {
       this.deviceStates = snap.devices.states;
       this.deviceTypes = snap.devices.types;
       this.valueActions = snap.devices.value_actions;
+      this.activity = snap.activity;
+      this.templates = snap.templates;
       this.loaded = true;
       this.error = "";
     } catch (err) {
@@ -259,6 +267,9 @@ export class WoowBusPanel extends LitElement {
       }
       case "device_state":
         this.deviceStates = { ...this.deviceStates, ...event.states };
+        break;
+      case "activity":
+        this.activity = [...event.entries.reverse(), ...this.activity].slice(0, ACTIVITY_KEEP);
         break;
     }
   }
@@ -385,6 +396,7 @@ export class WoowBusPanel extends LitElement {
           .api=${this.api}
           .portName=${this.portName}
           .open=${this.openDevice}
+          .templates=${this.templates}
           @opened=${() => (this.openDevice = null)}
         ></woow-serial-devices>`;
       case "monitor":
@@ -402,6 +414,14 @@ export class WoowBusPanel extends LitElement {
           @add-to-device=${(e: CustomEvent<Row>) => this.startAdd(e.detail)}
           @make-button=${(e: CustomEvent<Row>) => this.startAdd(e.detail, "button")}
         ></woow-serial-monitor>`;
+      case "activity":
+        return html`<woow-serial-activity
+          .entries=${this.activity}
+          .now=${this.now}
+          .t=${this.t}
+          .deviceName=${this.deviceName}
+          .portName=${this.portName}
+        ></woow-serial-activity>`;
       case "sendlog":
         return html`<woow-serial-sendlog
           .sent=${Object.values(this.sent)}

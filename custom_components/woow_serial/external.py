@@ -37,6 +37,7 @@ from .const import (
     CONF_TX_FORMAT,
     DOMAIN,
     EXTERNAL_DEFAULTS,
+    EXTERNAL_LATENCY,
     LINE_ENDINGS,
 )
 from .hub import Hub
@@ -194,6 +195,8 @@ class ExternalHub(Hub):
         if len(value) > limit:
             raise self._error("too_long", limit=str(limit))
         fut: asyncio.Future[bytes] | None = None
+        # With a wait, the line stays ours until the answer (or the timeout): a request sent meanwhile
+        # would collide with the answer on a half-duplex RS485 line.
         async with self._send_lock:
             if wait > 0:
                 fut = self.hass.loop.create_future()
@@ -201,19 +204,18 @@ class ExternalHub(Hub):
             try:
                 await self.hass.services.async_call(
                     "text", "set_value", {"entity_id": self.tx_entity, "value": value}, blocking=True)
+                self.io.tx_bytes += len(data)
+                self.io.tx_frames += 1
+                self._sent(data, origin)
+                if fut is None:
+                    await asyncio.sleep(SEND_SPACING)
+                    return None
+                try:  # the device answers in time, but the answer travels through the other integration
+                    return await asyncio.wait_for(fut, wait + EXTERNAL_LATENCY)
+                except TimeoutError:
+                    return None
             except HomeAssistantError as err:
+                raise self._error("send_failed", error=str(err)) from err
+            finally:
                 if fut is not None:
                     self._waiters.remove(fut)
-                raise self._error("send_failed", error=str(err)) from err
-            self.io.tx_bytes += len(data)
-            self.io.tx_frames += 1
-            self._sent(data, origin)
-            await asyncio.sleep(SEND_SPACING)
-        if fut is None:
-            return None
-        try:
-            return await asyncio.wait_for(fut, wait)
-        except TimeoutError:
-            return None
-        finally:
-            self._waiters.remove(fut)

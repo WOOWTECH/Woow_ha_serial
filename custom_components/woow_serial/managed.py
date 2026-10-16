@@ -126,7 +126,10 @@ class _MainEntity(ManagedEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        if not self.data and (last := await self.async_get_last_state()) is not None:
+        last = await self.async_get_last_state()
+        # Restore is by entity id: a device deleted and made again under the same name would inherit the
+        # old one's state, so only state written since this device was created counts.
+        if not self.data and last is not None and last.last_updated.timestamp() >= self.device.created:
             self.restore(last.state, last.attributes)
 
     def restore(self, state: str, attributes: dict[str, Any]) -> None:
@@ -145,10 +148,10 @@ class ManagedSwitch(_MainEntity, SwitchEntity):
         return self._assumed("power")
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.manager.async_action(self.device_id, "turn_on")
+        await self.manager.async_action(self.device_id, "turn_on", context=self._context)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.manager.async_action(self.device_id, "turn_off")
+        await self.manager.async_action(self.device_id, "turn_off", context=self._context)
 
     def restore(self, state: str, attributes: dict[str, Any]) -> None:
         if state in ("on", "off"):
@@ -184,17 +187,17 @@ class ManagedLight(_MainEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         if ATTR_BRIGHTNESS in kwargs and self.has("set_brightness"):
-            await self.manager.async_action(self.device_id, "set_brightness", kwargs[ATTR_BRIGHTNESS])
+            await self.manager.async_action(self.device_id, "set_brightness", kwargs[ATTR_BRIGHTNESS], context=self._context)
         elif self.has("turn_on"):
-            await self.manager.async_action(self.device_id, "turn_on")
+            await self.manager.async_action(self.device_id, "turn_on", context=self._context)
         else:
-            await self.manager.async_action(self.device_id, "set_brightness", self.data.get("brightness") or 255)
+            await self.manager.async_action(self.device_id, "set_brightness", self.data.get("brightness") or 255, context=self._context)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         if self.has("turn_off") or not self.has("set_brightness"):
-            await self.manager.async_action(self.device_id, "turn_off")
+            await self.manager.async_action(self.device_id, "turn_off", context=self._context)
         else:
-            await self.manager.async_action(self.device_id, "set_brightness", 0)
+            await self.manager.async_action(self.device_id, "set_brightness", 0, context=self._context)
 
     def restore(self, state: str, attributes: dict[str, Any]) -> None:
         if state in ("on", "off"):
@@ -230,16 +233,16 @@ class ManagedCover(_MainEntity, CoverEntity):
         return self._assumed("position")
 
     async def async_open_cover(self, **kwargs: Any) -> None:
-        await self.manager.async_action(self.device_id, "open")
+        await self.manager.async_action(self.device_id, "open", context=self._context)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
-        await self.manager.async_action(self.device_id, "close")
+        await self.manager.async_action(self.device_id, "close", context=self._context)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        await self.manager.async_action(self.device_id, "stop")
+        await self.manager.async_action(self.device_id, "stop", context=self._context)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
-        await self.manager.async_action(self.device_id, "set_position", kwargs[ATTR_POSITION])
+        await self.manager.async_action(self.device_id, "set_position", kwargs[ATTR_POSITION], context=self._context)
 
     def restore(self, state: str, attributes: dict[str, Any]) -> None:
         if isinstance(attributes.get("current_position"), (int, float)):
@@ -303,40 +306,40 @@ class ManagedMediaPlayer(_MainEntity, MediaPlayerEntity):
         return self._assumed("power", "volume", "mute", "source")
 
     async def async_turn_on(self) -> None:
-        await self.manager.async_action(self.device_id, "turn_on")
+        await self.manager.async_action(self.device_id, "turn_on", context=self._context)
 
     async def async_turn_off(self) -> None:
-        await self.manager.async_action(self.device_id, "turn_off")
+        await self.manager.async_action(self.device_id, "turn_off", context=self._context)
 
     async def async_volume_up(self) -> None:
-        await self.manager.async_action(self.device_id, "volume_up")
+        await self.manager.async_action(self.device_id, "volume_up", context=self._context)
 
     async def async_volume_down(self) -> None:
-        await self.manager.async_action(self.device_id, "volume_down")
+        await self.manager.async_action(self.device_id, "volume_down", context=self._context)
 
     async def async_set_volume_level(self, volume: float) -> None:
-        await self.manager.async_action(self.device_id, "set_volume", volume)
+        await self.manager.async_action(self.device_id, "set_volume", volume, context=self._context)
 
     async def async_mute_volume(self, mute: bool) -> None:
-        await self.manager.async_action(self.device_id, "mute_on" if mute else "mute_off")
+        await self.manager.async_action(self.device_id, "mute_on" if mute else "mute_off", context=self._context)
 
     async def async_media_play(self) -> None:
-        await self.manager.async_action(self.device_id, "play")
+        await self.manager.async_action(self.device_id, "play", context=self._context)
 
     async def async_media_pause(self) -> None:
-        await self.manager.async_action(self.device_id, "pause")
+        await self.manager.async_action(self.device_id, "pause", context=self._context)
 
     async def async_media_stop(self) -> None:
-        await self.manager.async_action(self.device_id, "stop")
+        await self.manager.async_action(self.device_id, "stop", context=self._context)
 
     async def async_media_next_track(self) -> None:
-        await self.manager.async_action(self.device_id, "next")
+        await self.manager.async_action(self.device_id, "next", context=self._context)
 
     async def async_media_previous_track(self) -> None:
-        await self.manager.async_action(self.device_id, "previous")
+        await self.manager.async_action(self.device_id, "previous", context=self._context)
 
     async def async_select_source(self, source: str) -> None:
-        await self.manager.async_option(self.device_id, source, "source")
+        await self.manager.async_option(self.device_id, source, "source", context=self._context)
 
     def restore(self, state: str, attributes: dict[str, Any]) -> None:
         if state in ("on", "off", "playing", "paused", "idle"):
@@ -359,7 +362,7 @@ class ManagedSelect(_MainEntity, SelectEntity):
         return option if option in self.options else None
 
     async def async_select_option(self, option: str) -> None:
-        await self.manager.async_option(self.device_id, option, "option")
+        await self.manager.async_option(self.device_id, option, "option", context=self._context)
 
     def restore(self, state: str, attributes: dict[str, Any]) -> None:
         if state in self.options:
@@ -396,7 +399,7 @@ class ManagedButton(ManagedEntity, ButtonEntity):
         self._attr_name = command.name
 
     async def async_press(self) -> None:
-        await self.manager.async_command(self.device_id, self.command_id)
+        await self.manager.async_command(self.device_id, self.command_id, context=self._context)
 
 
 class ManagedSensor(ManagedEntity, SensorEntity):

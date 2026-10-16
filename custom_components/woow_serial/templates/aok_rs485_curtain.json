@@ -1,0 +1,55 @@
+{
+  "id": "aok_rs485_curtain",
+  "name": {"en": "A-OK curtain motor (RS485)", "zh-Hant": "A-OK 奧科窗簾馬達（RS485）"},
+  "brand": "A-OK",
+  "model": "AM35-6/28-QMEL, AM68 (LM100); RS-485 protocol v05",
+  "type": "cover",
+  "description": {
+    "en": "Open, close, stop and go to a position; the status is read after each command and every 10 s. Requests: 9A, ID, channel mask, command, data, XOR. The motor answers queries only, never control commands.",
+    "zh-Hant": "開、關、停、到指定位置；每個指令之後和每 10 秒查一次狀態。請求：9A、ID、通道遮罩、指令、資料、XOR。馬達只回答查詢，控制指令不回覆。"
+  },
+  "port": {"bus": "rs485", "baudrate": 2400, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [
+    {
+      "key": "id",
+      "default": "01",
+      "description": {
+        "en": "Motor ID as one HEX byte: IDs 1–99 are 01–63 (00 = all motors).",
+        "zh-Hant": "馬達 ID，一個 HEX 位元組：ID 1–99 寫成 01–63（00 是群控）。"
+      }
+    },
+    {
+      "key": "ch",
+      "default": "01 00",
+      "description": {
+        "en": "Channel mask, low byte first: channel 1 = 01 00, channel 8 = 80 00, channel 9 = 00 01.",
+        "zh-Hant": "通道遮罩，低位元組在前：第 1 通道＝01 00、第 8 通道＝80 00、第 9 通道＝00 01。"
+      }
+    }
+  ],
+  "device": {
+    "commands": [
+      {"id": "open", "name": {"en": "Open", "zh-Hant": "開"}, "payload": "9A {id} {ch} 0A DD {xor8@1}", "then": "status", "then_ms": 1500},
+      {"id": "close", "name": {"en": "Close", "zh-Hant": "關"}, "payload": "9A {id} {ch} 0A EE {xor8@1}", "then": "status", "then_ms": 1500},
+      {"id": "stop", "name": {"en": "Stop", "zh-Hant": "停"}, "payload": "9A {id} {ch} 0A CC {xor8@1}", "then": "status", "then_ms": 800},
+      {"id": "position", "name": {"en": "Go to position", "zh-Hant": "到指定位置"}, "payload": "9A {id} {ch} DD {value:u8} {xor8@1}", "then": "status", "then_ms": 1500},
+      {"id": "status", "name": {"en": "Read status", "zh-Hant": "查詢狀態"}, "payload": "9A {id} {ch} CC 00 {xor8@1}", "wait_ms": 500}
+    ],
+    "actions": {"open": "open", "close": "close", "stop": "stop", "set_position": "position"},
+    "rules": [
+      {"id": "position", "pattern": "D8 {id} {ch} ?? ?? ?? {pos:u8} ?? {xor8@1}", "field": "position", "value": "{pos}"}
+    ],
+    "ranges": {"position": [100, 0]},
+    "poll_command": "status",
+    "poll_interval": 10
+  },
+  "references": [
+    "A-OK RS-485/RS-232 protocol v05 (2020-01-01): https://wiki.wirenboard.com/wiki/images/0/0f/Dauerhaft-RS485.zip",
+    "https://wiki.wirenboard.com/wiki/A-OK_AM35",
+    "https://github.com/wirenboard/wb-mqtt-serial/blob/HEAD/src/devices/curtains/a_ok_device.cpp"
+  ],
+  "notes": {
+    "en": "Factory speed is 2400 baud; on a 9600 bus with one A-OK motor connected, send 9A 00 00 00 DA 03 D9 once to switch it to 9600. Its position runs the other way (0 = open), so the template maps it (ranges.position = 100 → 0); check the direction on site. Only the status query is answered: the position follows from polling. Some AM35 answer queries meant for other motors: the reply pattern checks the ID and channel.",
+    "zh-Hant": "出廠鮑率是 2400；要接在 9600 的匯流排上時，只接這一台 A-OK 送一次 9A 00 00 00 DA 03 D9 改成 9600。它的位置方向相反（0＝開），範本已經換算（ranges.position＝100 → 0），到現場請確認方向。只有查詢會回覆，位置靠輪詢。部分 AM35 會回答發給別台的查詢，所以回覆樣式會比對 ID 和通道。"
+  }
+}

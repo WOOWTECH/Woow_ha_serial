@@ -188,29 +188,32 @@ class SerialPort:
 
     # ---- transmit -----------------------------------------------------------------
     async def write(self, data: bytes, origin: str | None = None) -> None:
+        async with self._write_lock:  # waits while a request is waiting for its answer
+            await self._write(data, origin)
+
+    async def _write(self, data: bytes, origin: str | None) -> None:
         if self._fd is None:
             raise OSError("serial port is not open")
-        async with self._write_lock:
-            fd = self._fd
-            if self.cfg.echo_filter:
-                # The echo arrives while we transmit; keep the window short so a device
-                # reply that repeats the request (e.g. Modbus 06) is never eaten instead.
-                self._echo = bytearray(data)
-                airtime = len(data) * self.cfg.char_bits / self.cfg.baudrate
-                self._echo_until = time.monotonic() + airtime + 0.1
-            view = memoryview(data)
-            while view:
-                try:
-                    view = view[os.write(fd, view):]
-                except BlockingIOError:
-                    await self._wait_writable(fd)
-            await self._loop.run_in_executor(None, termios.tcdrain, fd)
-            self.tx_bytes += len(data)
-            self.tx_frames += 1
-            self._on_tx(data, origin)
-            # Keep the line quiet for one frame gap before the next send, so back-to-back
-            # sends stay separate frames at the receiver (847767 merged them, 2026-10-16).
-            await asyncio.sleep(self.cfg.gap)
+        fd = self._fd
+        if self.cfg.echo_filter:
+            # The echo arrives while we transmit; keep the window short so a device
+            # reply that repeats the request (e.g. Modbus 06) is never eaten instead.
+            self._echo = bytearray(data)
+            airtime = len(data) * self.cfg.char_bits / self.cfg.baudrate
+            self._echo_until = time.monotonic() + airtime + 0.1
+        view = memoryview(data)
+        while view:
+            try:
+                view = view[os.write(fd, view):]
+            except BlockingIOError:
+                await self._wait_writable(fd)
+        await self._loop.run_in_executor(None, termios.tcdrain, fd)
+        self.tx_bytes += len(data)
+        self.tx_frames += 1
+        self._on_tx(data, origin)
+        # Keep the line quiet for one frame gap before the next send, so back-to-back
+        # sends stay separate frames at the receiver (847767 merged them, 2026-10-16).
+        await asyncio.sleep(self.cfg.gap)
 
     async def _wait_writable(self, fd: int) -> None:
         fut = self._loop.create_future()
@@ -226,12 +229,17 @@ class SerialPort:
             self._loop.remove_writer(fd)
 
     async def request(self, data: bytes, timeout: float, origin: str | None = None) -> bytes | None:
-        """Write, then return the next received frame (None on timeout)."""
+        """Write, then return the next received frame (None on timeout).
+
+        The line stays ours until the answer arrives (or the timeout): RS485 is half duplex, and the
+        next request sent while a device is answering would collide with that answer on the wire.
+        """
         fut: asyncio.Future[bytes] = self._loop.create_future()
         self._waiters.append(fut)
         try:
-            await self.write(data, origin)
-            return await asyncio.wait_for(fut, timeout)
+            async with self._write_lock:
+                await self._write(data, origin)
+                return await asyncio.wait_for(fut, timeout)
         except TimeoutError:
             return None
         finally:

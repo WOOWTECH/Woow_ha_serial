@@ -1,0 +1,49 @@
+{
+  "id": "xymd02_modbus_th",
+  "name": {"en": "XY-MD02 temperature and humidity sensor (Modbus RTU)", "zh-Hant": "XY-MD02 溫濕度感測器（Modbus RTU）"},
+  "brand": "XY-MD02 (SHT20)",
+  "model": "XY-MD02",
+  "type": "other",
+  "description": {
+    "en": "Temperature and humidity read every 30 s with function 04 (input registers 0001–0002, both × 0.1; temperature is signed).",
+    "zh-Hant": "每 30 秒用功能碼 04 讀溫度和濕度（輸入暫存器 0001–0002，都是 × 0.1；溫度有正負號）。"
+  },
+  "port": {"bus": "rs485", "baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [
+    {
+      "key": "addr",
+      "default": "01",
+      "description": {
+        "en": "Modbus address 01–F7 (factory 01). Every device on the bus needs its own.",
+        "zh-Hant": "Modbus 位址 01–F7（出廠 01）。同一條匯流排上每台設備的位址都要不同。"
+      }
+    }
+  ],
+  "device": {
+    "commands": [
+      {"id": "read", "name": {"en": "Read", "zh-Hant": "讀取"}, "payload": "{addr} 04 00 01 00 02 {crc16_modbus}", "wait_ms": 500}
+    ],
+    "sensors": [
+      {
+        "id": "temperature", "name": {"en": "Temperature", "zh-Hant": "溫度"},
+        "pattern": "{addr} 04 04 {t:s16} {h:u16} {crc16_modbus}", "capture": "t", "scale": 0.1,
+        "unit": "°C", "device_class": "temperature", "precision": 1
+      },
+      {
+        "id": "humidity", "name": {"en": "Humidity", "zh-Hant": "濕度"},
+        "pattern": "{addr} 04 04 {t:s16} {h:u16} {crc16_modbus}", "capture": "h", "scale": 0.1,
+        "unit": "%", "device_class": "humidity", "precision": 1
+      }
+    ],
+    "poll_command": "read",
+    "poll_interval": 30
+  },
+  "references": [
+    "https://knowledgebase.grenton.com/hubfs/xy-md02-manual.pdf",
+    "https://knowledgebase.grenton.com/en/integration-with-xy-md02-temperature-and-humidity-sensor"
+  ],
+  "notes": {
+    "en": "Some answer frames printed in the manual have wrong CRCs; the template follows the Modbus standard. The sensor also has ASCII commands: do not send AUTO on a shared bus (it then reports by itself). Firmware versions differ in the baud rate register, so the template leaves it alone.",
+    "zh-Hant": "手冊印的幾個回覆框 CRC 是錯的，範本照 Modbus 標準。感測器另有 ASCII 指令：接在共用匯流排上時不要送 AUTO（它會開始自己定時上報）。不同韌體的鮑率暫存器寫法不同，範本不去改它。"
+  }
+}

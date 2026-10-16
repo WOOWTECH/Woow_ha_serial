@@ -243,3 +243,189 @@ def test_serial_port_on_a_pty():
         os.close(slave)
 
     asyncio.run(run())
+
+
+def test_activity_messages_are_translated():
+    """Every logged message has an English line and a panel translation in both languages."""
+    import re
+    from pathlib import Path
+
+    from custom_components.woow_serial.activity import MESSAGES, summarize
+
+    assert summarize("device_deleted", {"device": "Curtain"}) == 'deleted device "Curtain"'
+    assert summarize("sent", {"hex": "01"}) == "sent 01 on ?"  # a missing arg never raises
+    i18n = (Path(__file__).parents[1] / "frontend" / "src" / "i18n.ts").read_text(encoding="utf-8")
+    english, chinese = i18n.split("const zh", 1)
+    for msg, line in MESSAGES.items():
+        fields = set(re.findall(r"\{(\w+)\}", line))
+        for table in (english, chinese):
+            match = re.search(rf"^  log_{msg}: \"(.*)\",$", table, re.M)
+            assert match, f"log_{msg} missing from the panel translations"
+            assert set(re.findall(r"\{(\w+)\}", match.group(1))) == fields, msg
+
+
+def test_llm_tools_cover_every_service():
+    """Each service is a tool with a description and parameters the MCP server can turn into JSON schema."""
+    import probatio
+
+    from homeassistant.helpers import llm
+
+    from custom_components.woow_serial import llm_api
+
+    services, texts = llm_api._read()
+    tools = {tool.name: tool for tool in llm_api.build_tools(services, texts)}
+    assert set(tools) == set(services)
+    for name, tool in tools.items():
+        assert tool.description and "return_response" not in tool.description, name
+        schema = probatio.to_openapi(tool.parameters, custom_serializer=llm.selector_serializer, openapi_version="3.1.0")
+        assert set(schema.get("properties", {})) == set((services[name] or {}).get("fields") or {}), name
+    assert tools["get_device"].annotations.read_only and not tools["delete_device"].annotations.read_only
+    assert "device" in probatio.to_openapi(tools["save_device"].parameters, custom_serializer=llm.selector_serializer,
+                                           openapi_version="3.1.0")["required"]
+
+
+def test_service_texts_in_sync():
+    """services.yaml repeats the English texts (MCP servers read them there): run tools/sync_service_texts.py."""
+    import json
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).parents[1] / "custom_components" / "woow_serial"
+    services = yaml.safe_load((root / "services.yaml").read_text(encoding="utf-8"))
+    texts = json.loads((root / "translations" / "en.json").read_text(encoding="utf-8"))["services"]
+    assert set(services) == set(texts)
+    for name, spec in services.items():
+        assert (spec["name"], spec["description"]) == (texts[name]["name"], texts[name]["description"]), name
+        for field, config in (spec.get("fields") or {}).items():
+            text = texts[name]["fields"][field]
+            assert (config["name"], config["description"]) == (text["name"], text["description"]), f"{name}.{field}"
+
+
+def test_text_patterns_take_parameters():
+    """{param} in a text pattern is the parameter's text (escaped); regex quantifiers stay quantifiers."""
+    pattern = tp.Pattern(r"Out0*{output} In(?P<input>\d{1,2}) All", "text", {"output": "1.5"})
+    assert pattern.match(b"Out1.5 In12 All") == {"input": 12}
+    assert pattern.match(b"Out1x5 In12 All") is None  # the dot is literal
+    assert tp.Pattern(r"MV(?P<v>\d{2})", "text", {}).match(b"MV45\r") == {"v": 45}
+
+
+def test_out_of_range_feedback():
+    """A position or brightness outside the device range is not one; a volume past it is the limit."""
+    device = dv.Device.from_dict({"id": "d", "name": "d", "type": "cover", "port_id": "p",
+                                  "ranges": {"position": [100, 0], "volume": [0, 80]}})
+    assert dv.from_device(device, "position", 30) == 70
+    assert dv.from_device(device, "position", 255) is None
+    assert dv.from_device(device, "volume", 90) == 1.0
+    assert dv.from_device(device, "brightness", -1) is None
+
+
+def test_follow_ups_and_reply_to():
+    base = {"id": "d", "name": "d", "type": "switch", "port_id": "p", "commands": [
+        {"id": "on", "name": "On", "payload": "01"}, {"id": "q", "name": "Query", "payload": "02"}]}
+
+    def code(**change):
+        device = dv.Device.from_dict({**base, **change})
+        try:
+            dv.validate(device)
+        except dv.DeviceError as err:
+            return err.code
+        return None
+
+    assert code(commands=[{"id": "on", "name": "On", "payload": "01", "then": "q"},
+                          {"id": "q", "name": "Query", "payload": "02"}]) is None
+    assert code(commands=[{"id": "on", "name": "On", "payload": "01", "then": "on"}]) == "command_then"
+    assert code(commands=[{"id": "on", "name": "On", "payload": "01", "then": "zz"}]) == "command_then"
+    assert code(rules=[{"id": "r", "pattern": "01 {b:u8}", "value": "{b}", "reply_to": "q"}]) is None
+    assert code(rules=[{"id": "r", "pattern": "01 {b:u8}", "value": "{b}", "reply_to": "zz"}]) == "rule_reply_to"
+    assert code(sensors=[{"id": "s", "name": "S", "pattern": "01 {v:u8}", "capture": "v", "reply_to": "zz"}]) == \
+        "sensor_reply_to"
+
+
+def test_template_texts_localize():
+    from custom_components.woow_serial.templates import localize
+
+    data = {"name": {"en": "Open", "zh-Hant": "開"}, "payload": "55", "params": {"en": "kept as is"},
+            "list": [{"en": "A", "zh-Hant": "甲"}]}
+    assert localize(data, "zh-Hant") == {"name": "開", "payload": "55", "params": "kept as is", "list": ["甲"]}
+    assert localize(data, "de") == {"name": "Open", "payload": "55", "params": "kept as is", "list": ["A"]}
+
+
+def test_send_accepts_an_expected_reply():
+    data = SEND_SCHEMA({"port": "RS485-1", "hex": "04 04 00 01 00 02 20 5E", "expect": "04 04 04 *"})
+    assert data["expect"] == "04 04 04 *" and data["wait_ms"] == 0
+    assert tp.Pattern("04 04 04 {t:s16} *", "hex", {}).match(bytes.fromhex("040404FFC9")) == {"t": -55}
+
+
+def test_replies_belong_to_the_command_that_went_out():
+    """reply_to: an answer counts for the command whose bytes went out last on that port (on_sent), so
+    a channel whose read waited in line behind another's never takes that one's answer."""
+    import types
+
+    def relay(device_id, coil):
+        return dv.Device.from_dict({
+            "id": device_id, "name": device_id, "type": "switch", "port_id": "p1", "params": {"coil": coil},
+            "commands": [{"id": "read", "name": "Read", "payload": "03 01 {coil} 00 01 {crc16_modbus}"}],
+            "rules": [{"id": "r", "pattern": "03 01 01 {b:u8} {crc16_modbus}", "field": "power", "value": "{b}",
+                       "reply_to": "read"}]})
+
+    mgr = dv.DeviceManager(_Hass(), None, types.SimpleNamespace(ports={}))
+    for device in (relay("ch1", "00 00"), relay("ch2", "00 01")):
+        mgr.devices[device.id] = device
+        mgr._compile(device)
+    on, off = bytes.fromhex("03010101"), bytes.fromhex("03010100")  # "coil is on / off", no register named
+    on, off = on + ck.compute("crc16_modbus", on), off + ck.compute("crc16_modbus", off)
+    mgr.on_sent(BusFrame("p1", "tx", b"\x03\x01\x00\x01", origin="device:ch2:read"))
+    mgr.on_frame(BusFrame("p1", "rx", on))
+    assert mgr.state.get("ch2", {}).get("power") is True and "power" not in mgr.state.get("ch1", {})
+    mgr.on_frame(BusFrame("p1", "rx", off))  # a second frame answers nothing
+    assert mgr.state["ch2"]["power"] is True
+    mgr.on_sent(BusFrame("p1", "tx", b"\x01", origin="panel"))  # someone else sent in between
+    mgr.on_frame(BusFrame("p1", "rx", off))
+    assert mgr.state["ch2"]["power"] is True and "power" not in mgr.state.get("ch1", {})
+    mgr.on_sent(BusFrame("p1", "tx", b"\x03\x01\x00\x00", origin="device:ch1:read"))
+    mgr.on_frame(BusFrame("p1", "rx", off))
+    assert mgr.state["ch1"]["power"] is False and mgr.state["ch2"]["power"] is True
+
+
+def test_joined_frames_are_taken_apart():
+    """A WF485 joins frames less than ~0.1 s apart; frames made only of known pieces are split again."""
+    import types
+
+    hass = _Hass()
+    mgr = dv.DeviceManager(hass, None, types.SimpleNamespace(ports={}))
+    keypad = dv.Device.from_dict({"id": "k", "name": "k", "type": "keypad", "port_id": "p1", "params": {"addr": "10"},
+                                  "buttons": [{"id": "b1", "name": "1", "pattern": "A5 5A {addr} 01 {sum8}"},
+                                              {"id": "b3", "name": "3", "pattern": "A5 5A {addr} 03 {sum8}"}]})
+    motor = dv.Device.from_dict({**CURTAIN, "id": "m", "port_id": "p1", "ranges": {}})
+    for device in (keypad, motor):
+        mgr.devices[device.id] = device
+        mgr._compile(device)
+
+    def press(key):
+        body = bytes([0xA5, 0x5A, 0x10, key])
+        return body + bytes([sum(body) & 0xFF])
+
+    def presses():
+        out = [d["button"] for t, d in hass.bus.events if t == "woow_serial_button"]
+        hass.bus.events.clear()
+        return out
+
+    mgr.on_frame(BusFrame("p1", "rx", press(3) * 3))  # one key sent three times, back to back
+    assert presses() == ["3"]  # three pieces, one press (debounce)
+    mgr.on_frame(BusFrame("p1", "rx", press(1) + press(3)))
+    assert presses() == ["1"]  # "3" is still within its debounce
+    mgr._last_press.clear()
+    position = bytes.fromhex("55010203041E")
+    position += ck.compute("crc16_modbus", position)
+    mgr.on_frame(BusFrame("p1", "rx", position + press(1)))  # a motor's answer and a key press joined
+    assert presses() == ["1"] and mgr.state["m"]["position"] == 30
+    mgr._last_press.clear()
+    sent = bytes.fromhex("55010203011234")
+    mgr.on_sent(BusFrame("p1", "tx", sent, origin="panel"))
+    mgr.on_frame(BusFrame("p1", "rx", sent + press(3)))  # the motor's echo of our command, then a key
+    assert presses() == ["3"]
+    mgr._last_press.clear()
+    mgr.on_frame(BusFrame("p1", "rx", b"\x99\x98" + press(1)))  # unknown bytes in front: no guessing
+    assert presses() == []
+    assert mgr.split("p1", press(1)) == [press(1)]

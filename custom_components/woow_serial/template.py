@@ -10,7 +10,8 @@ Receive patterns read frames back, for state feedback and sensors:
     55 {addr} 03 ?? {pos:u8} {crc16_modbus}    ?? any byte, {name:type} captures a number,
                                                a parameter must match, a checksum must be valid,
                                                * at the end accepts any remaining bytes
-    ^PWR=(?P<power>\\d+)                        text: a regular expression with named groups
+    ^PWR=(?P<power>\\d+)                        text: a regular expression with named groups;
+    Out0*{output} In(?P<input>\\d+)              {param} stands for a device parameter's text
 
 Errors carry a code and details so the panel can explain them in the user's language.
 """
@@ -200,9 +201,14 @@ class Pattern:
         self.regex: re.Pattern[str] | None = None
         self.items: list[tuple[str, Any]] = []
         self.captures: list[str] = []
+        self.length: int | None = None
         if fmt == "text":
+            def param(m: re.Match[str]) -> str:  # {output} -> the parameter, escaped; \d{2} stays a quantifier
+                name = m.group(1)
+                return re.escape(params[name]) if name in params and m.group(2) is None else m.group(0)
+
             try:
-                self.regex = re.compile(text)
+                self.regex = re.compile(_TEXT_FIELD.sub(param, text))
             except re.error as err:
                 raise TemplateError("bad_regex", detail=str(err)) from err
             return
@@ -221,6 +227,23 @@ class Pattern:
                     kind = "number"
             self.items.append((kind, value))
         self.captures = [v.name for k, v in self.items if k == "number"]
+        self.length = self._length()
+
+    def _length(self) -> int | None:
+        """Bytes in a frame this HEX pattern matches; None for text and for patterns ending in *."""
+        if self.regex is not None or any(kind == "rest" for kind, _ in self.items):
+            return None
+        total = 0
+        for kind, value in self.items:
+            if kind == "bytes":
+                total += len(value)
+            elif kind == "any":
+                total += 1
+            elif kind == "number":
+                total += _width(value.type)
+            else:
+                total += len(checksum.compute(value.name, b""))
+        return total
 
     def match(self, data: bytes) -> dict[str, Any] | None:
         if self.regex is not None:

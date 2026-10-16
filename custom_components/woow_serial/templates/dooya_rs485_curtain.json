@@ -1,0 +1,46 @@
+{
+  "id": "dooya_rs485_curtain",
+  "name": {"en": "Dooya curtain motor (RS485)", "zh-Hant": "杜亞窗簾馬達（RS485）"},
+  "brand": "Dooya",
+  "model": "DT52E, DT82TV, DM35EQ (RS485 protocol A4)",
+  "type": "cover",
+  "description": {
+    "en": "Open, close, stop and go to a position; the position is read after each command and every 10 s. Frames: 55, address, function, data, CRC-16/Modbus (low byte first). Control commands are answered with the same frame.",
+    "zh-Hant": "開、關、停、到指定位置；每個指令之後和每 10 秒讀回位置。訊框：55、位址、功能碼、資料、CRC-16/Modbus（低位在前）。控制指令會原樣回送。"
+  },
+  "port": {"bus": "rs485", "baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [
+    {
+      "key": "addr",
+      "default": "FE FE",
+      "description": {
+        "en": "Motor address as sent on the line, ID_L then ID_H. Factory FE FE: give every motor its own address before putting several on one bus (00 00 is broadcast and gets no reply).",
+        "zh-Hant": "馬達位址，照線上順序 ID_L、ID_H。出廠是 FE FE：同一條匯流排接多台前，要先各自改成不同位址（00 00 是群控，不會回覆）。"
+      }
+    }
+  ],
+  "device": {
+    "commands": [
+      {"id": "open", "name": {"en": "Open", "zh-Hant": "開"}, "payload": "55 {addr} 03 01 {crc16_modbus}", "then": "read_position", "then_ms": 1500, "wait_ms": 500},
+      {"id": "close", "name": {"en": "Close", "zh-Hant": "關"}, "payload": "55 {addr} 03 02 {crc16_modbus}", "then": "read_position", "then_ms": 1500, "wait_ms": 500},
+      {"id": "stop", "name": {"en": "Stop", "zh-Hant": "停"}, "payload": "55 {addr} 03 03 {crc16_modbus}", "then": "read_position", "then_ms": 800, "wait_ms": 500},
+      {"id": "position", "name": {"en": "Go to position", "zh-Hant": "到指定位置"}, "payload": "55 {addr} 03 04 {value:u8} {crc16_modbus}", "then": "read_position", "then_ms": 1500, "wait_ms": 500},
+      {"id": "read_position", "name": {"en": "Read position", "zh-Hant": "讀取位置"}, "payload": "55 {addr} 01 02 01 {crc16_modbus}", "wait_ms": 500}
+    ],
+    "actions": {"open": "open", "close": "close", "stop": "stop", "set_position": "position"},
+    "rules": [
+      {"id": "position", "pattern": "55 {addr} 01 01 {pos:u8} {crc16_modbus}", "field": "position", "value": "{pos}"}
+    ],
+    "poll_command": "read_position",
+    "poll_interval": 10
+  },
+  "references": [
+    "Dooya RS485 protocol A4 (BD-4.2-20): https://support.wirenboard.com/uploads/short-url/sErbOxaA8bW5chva4REYz8rmFr6.pdf",
+    "https://wiki.wirenboard.com/wiki/Dooya_DT82",
+    "https://github.com/wirenboard/wb-mqtt-serial/blob/HEAD/src/devices/curtains/dooya_device.cpp"
+  ],
+  "notes": {
+    "en": "Position 100 = open, 0 = closed, as in Home Assistant. Until the limits are set (and after a power cut) the motor answers FF to position commands and reads, which is ignored; run a full open or close first. The motor sends nothing by itself, so the position comes from polling.",
+    "zh-Hant": "位置 100＝全開、0＝全關，跟 Home Assistant 一樣。行程還沒設定（或斷電後）時，位置指令和讀取都回 FF，會被忽略；請先跑一次全開或全關。馬達不會主動回報，位置靠輪詢。"
+  }
+}

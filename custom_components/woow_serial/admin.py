@@ -15,6 +15,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
+from .activity import ActivityLog
 from .bus import BusFrame, get_bus
 from .catalog import Catalog, is_text
 from .codec import parse_hex, printable, to_hex, unescape
@@ -29,6 +30,7 @@ from .const import (
 )
 from .mirror import Mirror
 from .panel import async_register_panel, async_remove_panel
+from .templates import TemplateLibrary
 
 
 def frame_dict(frame: BusFrame, echo: bool) -> dict[str, Any]:
@@ -55,17 +57,23 @@ class AdminHub:
         self.catalog = Catalog(hass)
         self.mirror = Mirror(hass)
         self.devices = DeviceManager(hass, entry, self.bus)
+        self.activity = ActivityLog(hass)
+        self.devices.activity = self.activity
+        self.templates = TemplateLibrary(hass)
         self._subs: list[Callable[[str, dict[str, Any]], None]] = []
         self._live: list[dict[str, Any]] = []
         self._live_dropped = 0
         self._live_handle = None
-        self._listening: dict[str, list[asyncio.Future[bytes]]] = {}  # port -> waiting LISTEN calls
+        # port -> waiting listen calls, each with an optional test a frame must pass
+        self._listening: dict[str, list[tuple[asyncio.Future[bytes], Callable[[bytes], bool] | None]]] = {}
         self._unsubs: list[CALLBACK_TYPE] = []
 
     async def async_start(self) -> None:
         await self.catalog.async_load()
         await self.mirror.async_load()
         await self.devices.async_load()
+        await self.activity.async_load()
+        await self.templates.async_load()
         # Entity rows left by commands, sensors or devices deleted earlier; before any platform
         # registers, so nothing live can be mistaken for one.
         self.devices.prune_registry()
@@ -75,6 +83,7 @@ class AdminHub:
             self.catalog.subscribe(lambda payload: self._send("catalog", payload)),
             self.mirror.subscribe(lambda payload: self._send("mirror", payload)),
             self.devices.subscribe(self._send),
+            self.activity.subscribe(lambda payload: self._send("activity", payload)),
             # A graceful restart does not unload entries; FINAL_WRITE is where stores get saved.
             self.hass.bus.async_listen(EVENT_HOMEASSISTANT_FINAL_WRITE, self._async_final_write),
         ]
@@ -92,10 +101,12 @@ class AdminHub:
         async_remove_panel(self.hass)
         await self.catalog.async_flush()
         await self.mirror.async_flush()
+        await self.activity.async_flush()
 
     async def _async_final_write(self, _event: Event) -> None:
         await self.catalog.async_flush()
         await self.mirror.async_flush()
+        await self.activity.async_flush()
 
     # ---- frames ---------------------------------------------------------------------
     @callback
@@ -103,12 +114,21 @@ class AdminHub:
         port = self.bus.ports.get(frame.port_id)
         external = port is not None and port.kind == KIND_EXTERNAL
         echo = self.mirror.on_frame(frame, REPLY_WINDOW_EXTERNAL if external else REPLY_WINDOW)
-        if frame.direction == "rx" and not echo:
+        if frame.direction == "tx":
+            self.devices.on_sent(frame)
+        elif not echo:
             self.catalog.on_frame(frame)
             self.devices.on_frame(frame)  # state feedback, sensors and keypads of the devices on this port
-            for fut in self._listening.pop(frame.port_id, []):
-                if not fut.done():
-                    fut.set_result(frame.data)
+            if waiting := self._listening.get(frame.port_id):
+                keep = []
+                for fut, match in waiting:
+                    if fut.done():
+                        continue
+                    if match is None or match(frame.data):
+                        fut.set_result(frame.data)
+                    else:
+                        keep.append((fut, match))
+                self._listening[frame.port_id] = keep
         if not self._subs:
             return
         if len(self._live) < LIVE_MAX:
@@ -150,20 +170,34 @@ class AdminHub:
             "catalog": self.catalog.snapshot(),
             "mirror": self.mirror.snapshot(),
             "devices": self.devices.snapshot(),
+            "activity": self.activity.recent(200),
+            "templates": self.templates.summaries(self.hass.config.language or "en"),
         }
 
-    async def async_listen(self, port_id: str, timeout: float) -> bytes | None:
-        """The next frame a port hears (not one of our own sends), e.g. a keypad press to learn."""
+    @callback
+    def expect_frame(self, port_id: str, match: Callable[[bytes], bool] | None = None) -> asyncio.Future[bytes]:
+        """A future for the next frame a port hears that passes `match` (not one of our own sends).
+        Taken before sending, so a fast answer is not missed; hand it to async_wait_frame."""
         fut: asyncio.Future[bytes] = self.hass.loop.create_future()
-        self._listening.setdefault(port_id, []).append(fut)
+        self._listening.setdefault(port_id, []).append((fut, match))
+        return fut
+
+    async def async_wait_frame(self, port_id: str, fut: asyncio.Future[bytes], timeout: float) -> bytes | None:
         try:
             return await asyncio.wait_for(fut, timeout)
         except TimeoutError:
             return None
         finally:
-            waiting = self._listening.get(port_id, [])
-            if fut in waiting:
-                waiting.remove(fut)
+            self.forget_frame(port_id, fut)
+
+    @callback
+    def forget_frame(self, port_id: str, fut: asyncio.Future[bytes]) -> None:
+        self._listening[port_id] = [w for w in self._listening.get(port_id, []) if w[0] is not fut]
+
+    async def async_listen(self, port_id: str, timeout: float,
+                           match: Callable[[bytes], bool] | None = None) -> bytes | None:
+        """The next frame a port hears, e.g. a keypad press to learn."""
+        return await self.async_wait_frame(port_id, self.expect_frame(port_id, match), timeout)
 
     def recent_frames(self, port_id: str) -> list[bytes]:
         """Frames the monitor holds for a port, for trying a receive pattern in the editor."""

@@ -1,0 +1,50 @@
+{
+  "id": "blackbird_hdmi_matrix_output",
+  "name": {"en": "HDMI matrix output ('1V2.' protocol)", "zh-Hant": "HDMI 矩陣的一個輸出（「1V2.」協定）"},
+  "brand": "Monoprice Blackbird and compatible",
+  "model": "Blackbird 8x8 (24180) and matrices using 'xVy.' commands",
+  "type": "select",
+  "description": {
+    "en": "One output of the matrix as a select: picking an input sends 'NVoutput.'; the matrix answers 'AV:NN->OO'. The output is checked every 60 s with 'Status<output>.'. Add one device per output.",
+    "zh-Hant": "矩陣的一個輸出做成選單：選一個輸入就送「N V 輸出.」，矩陣回「AV:NN->OO」。每 60 秒用「Status<輸出>.」確認一次。每個輸出各建一個裝置。"
+  },
+  "port": {"bus": "rs232", "baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [
+    {
+      "key": "output",
+      "default": "1",
+      "description": {"en": "Output number, as text (1, 2 …).", "zh-Hant": "輸出編號，用文字填（1、2 …）。"}
+    }
+  ],
+  "device": {
+    "commands": [
+      {"id": "in1", "name": {"en": "Input 1", "zh-Hant": "輸入 1"}, "format": "text", "payload": "1V{output}.", "wait_ms": 500},
+      {"id": "in2", "name": {"en": "Input 2", "zh-Hant": "輸入 2"}, "format": "text", "payload": "2V{output}.", "wait_ms": 500},
+      {"id": "in3", "name": {"en": "Input 3", "zh-Hant": "輸入 3"}, "format": "text", "payload": "3V{output}.", "wait_ms": 500},
+      {"id": "in4", "name": {"en": "Input 4", "zh-Hant": "輸入 4"}, "format": "text", "payload": "4V{output}.", "wait_ms": 500},
+      {"id": "status", "name": {"en": "Query output", "zh-Hant": "查詢輸出"}, "format": "text", "payload": "Status{output}.", "wait_ms": 500}
+    ],
+    "options": [
+      {"name": {"en": "Input 1", "zh-Hant": "輸入 1"}, "command": "in1"},
+      {"name": {"en": "Input 2", "zh-Hant": "輸入 2"}, "command": "in2"},
+      {"name": {"en": "Input 3", "zh-Hant": "輸入 3"}, "command": "in3"},
+      {"name": {"en": "Input 4", "zh-Hant": "輸入 4"}, "command": "in4"}
+    ],
+    "rules": [
+      {"id": "in1", "format": "text", "pattern": "AV: ?0*1 ?-> ?0*{output}(?!\\d)", "field": "option", "value": {"en": "Input 1", "zh-Hant": "輸入 1"}},
+      {"id": "in2", "format": "text", "pattern": "AV: ?0*2 ?-> ?0*{output}(?!\\d)", "field": "option", "value": {"en": "Input 2", "zh-Hant": "輸入 2"}},
+      {"id": "in3", "format": "text", "pattern": "AV: ?0*3 ?-> ?0*{output}(?!\\d)", "field": "option", "value": {"en": "Input 3", "zh-Hant": "輸入 3"}},
+      {"id": "in4", "format": "text", "pattern": "AV: ?0*4 ?-> ?0*{output}(?!\\d)", "field": "option", "value": {"en": "Input 4", "zh-Hant": "輸入 4"}}
+    ],
+    "poll_command": "status",
+    "poll_interval": 60
+  },
+  "references": [
+    "Monoprice Blackbird 8x8 (24180) manual: https://downloads.monoprice.com/files/manuals/24180_Manual_170516.pdf",
+    "https://files.hdtvsupply.com/rs232-mini-manager.pdf"
+  ],
+  "notes": {
+    "en": "On the Blackbird 24180 the rear EDID DIP switches must be 1111 for RS-232 control. Written for 4 inputs: add commands, options and rules for more. Close relatives differ: Monoprice 15750 runs at 115200 with 's in 1 av out 2!', WolfPack at 115200 with '1X2.' answering OK — copy this template and change the commands, rules and baud rate.",
+    "zh-Hant": "Blackbird 24180 背板的 EDID 指撥開關要設成 1111 才接受 RS-232 控制。依 4 個輸入寫的：輸入更多時，請加指令、選項和規則。同類產品有差異：Monoprice 15750 用 115200、指令「s in 1 av out 2!」；WolfPack 用 115200、指令「1X2.」並回 OK——請複製這個範本再改指令、規則和鮑率。"
+  }
+}

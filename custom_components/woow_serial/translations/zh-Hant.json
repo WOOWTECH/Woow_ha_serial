@@ -187,11 +187,15 @@
   "services": {
     "send": {
       "name": "發送（串口）",
-      "description": "從 RS485／RS232 埠（本機或外接綁定）送出資料，可以等待對方回覆。",
+      "description": "從埠送出資料或文字，可以等待對方回覆（要求回應時傳回）。要拿到結果請帶 return_response: true。",
       "fields": {
         "config_entry_id": {
+          "name": "埠（設定項目）",
+          "description": "埠的設定項目。這個或「埠」擇一。"
+        },
+        "port": {
           "name": "埠",
-          "description": "要從哪個串口送出。"
+          "description": "埠名稱（例如 RS485-1）、裝置路徑（/dev/ttySC0）或設定項目 ID，可從 list_ports 取得。"
         },
         "hex": {
           "name": "HEX",
@@ -201,9 +205,287 @@
           "name": "文字",
           "description": "可用 \\r \\n \\xHH 跳脫字元，會自動加上這個埠設定的文字結尾。"
         },
+        "expect": {
+          "name": "預期的回覆",
+          "description": "等第一筆符合這個接收樣式的訊框（HEX 可用 ?? 和 *，文字用正規式），其他訊框（例如同一條線上別的設備的輪詢）都跳過。等待 wait_ms，沒填就是 2000 ms；回應會附上擷取到的值。"
+        },
         "wait_ms": {
           "name": "等待回覆",
           "description": "0＝不等。否則把下一筆收到的資料（或逾時）當作回應傳回。"
+        },
+        "note": {
+          "name": "說明",
+          "description": "用一句話說明為什麼這樣做，會顯示在面板的活動紀錄給人看。"
+        }
+      }
+    },
+    "describe": {
+      "name": "使用說明",
+      "description": "傳回這個整合的使用方式：流程、裝置類型和動作、裝置定義欄位、指令範本和接收樣式語法、校驗碼、事件，以及目前的埠、範本和裝置。請先呼叫這個。呼叫時要帶 return_response: true。"
+    },
+    "list_ports": {
+      "name": "列出埠",
+      "description": "傳回所有埠（本機串口和外接設備）的 ID、名稱、種類、通訊參數、是否可用和收發計數。呼叫時要帶 return_response: true。"
+    },
+    "get_monitor": {
+      "name": "讀取監看",
+      "description": "傳回各埠收到的訊框，依來源（標頭／位址）分組，含次數、可讀文字和群組認定的校驗碼。呼叫時要帶 return_response: true。",
+      "fields": {
+        "port": {
+          "name": "埠",
+          "description": "埠名稱（例如 RS485-1）、裝置路徑（/dev/ttySC0）或設定項目 ID，可從 list_ports 取得。"
+        },
+        "limit": {
+          "name": "群組數",
+          "description": "最多傳回幾個群組，最近收到的在前。"
+        },
+        "include_hidden": {
+          "name": "包含隱藏的",
+          "description": "也傳回在面板上隱藏的群組。"
+        }
+      }
+    },
+    "get_send_log": {
+      "name": "讀取發送紀錄",
+      "description": "傳回 HA 送出過的內容、來源（服務、實體、面板、裝置）、次數、設備有沒有回覆（內容和延遲）、哪些其他埠也收到。呼叫時要帶 return_response: true。",
+      "fields": {
+        "port": {
+          "name": "埠",
+          "description": "埠名稱（例如 RS485-1）、裝置路徑（/dev/ttySC0）或設定項目 ID，可從 list_ports 取得。"
+        },
+        "limit": {
+          "name": "筆數",
+          "description": "最多傳回幾筆，最新的在前。"
+        }
+      }
+    },
+    "listen": {
+      "name": "聆聽",
+      "description": "等待埠收到下一筆訊框（不含 HA 自己送的）並傳回：請先請使用者按下遙控器或按鍵。呼叫時要帶 return_response: true。",
+      "fields": {
+        "port": {
+          "name": "埠",
+          "description": "埠名稱（例如 RS485-1）、裝置路徑（/dev/ttySC0）或設定項目 ID，可從 list_ports 取得。"
+        },
+        "timeout": {
+          "name": "等待時間",
+          "description": "最多等幾秒。"
+        }
+      }
+    },
+    "list_devices": {
+      "name": "列出裝置",
+      "description": "傳回受管裝置的完整定義、目前狀態和實體 ID。呼叫時要帶 return_response: true。",
+      "fields": {
+        "port": {
+          "name": "埠",
+          "description": "埠名稱（例如 RS485-1）、裝置路徑（/dev/ttySC0）或設定項目 ID，可從 list_ports 取得。"
+        },
+        "type": {
+          "name": "類型",
+          "description": "只列出這個類型。"
+        }
+      }
+    },
+    "get_device": {
+      "name": "讀取裝置",
+      "description": "傳回一個受管裝置：定義、狀態、實體 ID，以及其他按鍵可以綁定它的哪些動作。呼叫時要帶 return_response: true。",
+      "fields": {
+        "device": {
+          "name": "裝置",
+          "description": "裝置名稱或 ID，可從 list_devices 取得。"
+        }
+      }
+    },
+    "preview_command": {
+      "name": "預覽指令",
+      "description": "傳回指令範本代入參數和數值後會送出的位元組，或用錯誤代碼說明為什麼不行。呼叫時要帶 return_response: true。",
+      "fields": {
+        "payload": {
+          "name": "範本",
+          "description": "指令範本，例如 55 {addr} 03 04 {value:u8} {crc16_modbus} 或 VOL {value:02d}\\r。"
+        },
+        "format": {
+          "name": "格式",
+          "description": "hex（位元組）或 text（文字，可用跳脫字元；樣式為正規表示式）。"
+        },
+        "params": {
+          "name": "參數",
+          "description": "裝置參數，物件格式、值為 HEX，例如 {\"addr\": \"01 02\"}。"
+        },
+        "value": {
+          "name": "數值",
+          "description": "要代入 {value} 的值（設備單位）。"
+        }
+      }
+    },
+    "test_pattern": {
+      "name": "試比對樣式",
+      "description": "拿監看中這個埠的訊框試接收樣式，傳回符合的訊框和讀出的數值。呼叫時要帶 return_response: true。",
+      "fields": {
+        "pattern": {
+          "name": "樣式",
+          "description": "接收樣式，例如 55 {addr} 01 02 {pos:u8} {crc16_modbus}；文字格式用正規表示式。"
+        },
+        "port": {
+          "name": "埠",
+          "description": "埠名稱（例如 RS485-1）、裝置路徑（/dev/ttySC0）或設定項目 ID，可從 list_ports 取得。"
+        },
+        "format": {
+          "name": "格式",
+          "description": "hex（位元組）或 text（文字，可用跳脫字元；樣式為正規表示式）。"
+        },
+        "params": {
+          "name": "參數",
+          "description": "裝置參數，物件格式、值為 HEX，例如 {\"addr\": \"01 02\"}。"
+        }
+      }
+    },
+    "list_templates": {
+      "name": "列出範本",
+      "description": "傳回內建和本機的裝置範本：ID、廠牌、型號、類型、需要的通訊參數、參數、指令和按鍵。呼叫時要帶 return_response: true。",
+      "fields": {
+        "type": {
+          "name": "類型",
+          "description": "只列出這個類型。"
+        }
+      }
+    },
+    "get_activity": {
+      "name": "讀取活動紀錄",
+      "description": "傳回活動紀錄：改了或送了什麼、誰做的（服務、面板、實體）、時間和附上的說明。呼叫時要帶 return_response: true。",
+      "fields": {
+        "limit": {
+          "name": "筆數",
+          "description": "最多傳回幾筆，最新的在前。"
+        },
+        "device": {
+          "name": "裝置",
+          "description": "裝置名稱或 ID，可從 list_devices 取得。"
+        }
+      }
+    },
+    "save_device": {
+      "name": "儲存裝置",
+      "description": "用完整定義（見使用說明）建立或取代受管裝置。可以用名稱代替 ID：埠、功能對應／選項／輪詢裡的指令名稱、按鍵綁定的目標裝置。傳回儲存後的裝置，或帶代碼的錯誤讓呼叫者修正後重送。需要 admin 使用者。要拿到結果請帶 return_response: true。",
+      "fields": {
+        "device": {
+          "name": "裝置",
+          "description": "裝置定義物件：name、type、port（或 port_id）、params、commands、actions、options、rules、sensors、buttons、ranges、poll_command、poll_interval。"
+        },
+        "replace": {
+          "name": "同名取代",
+          "description": "名稱已存在時更新那個裝置，而不是失敗。"
+        },
+        "note": {
+          "name": "說明",
+          "description": "用一句話說明為什麼這樣做，會顯示在面板的活動紀錄給人看。"
+        }
+      }
+    },
+    "create_from_template": {
+      "name": "從範本建立",
+      "description": "用內建或本機範本在某個埠建立受管裝置並填入參數（通常是設備位址）。傳回裝置和設備需要的通訊參數。需要 admin 使用者。要拿到結果請帶 return_response: true。",
+      "fields": {
+        "template": {
+          "name": "範本",
+          "description": "範本 ID，可從 list_templates 取得。"
+        },
+        "port": {
+          "name": "埠",
+          "description": "埠名稱（例如 RS485-1）、裝置路徑（/dev/ttySC0）或設定項目 ID，可從 list_ports 取得。"
+        },
+        "name": {
+          "name": "名稱",
+          "description": "裝置名稱；留空用範本名稱。"
+        },
+        "params": {
+          "name": "參數",
+          "description": "裝置參數，物件格式、值為 HEX，例如 {\"addr\": \"01 02\"}。"
+        },
+        "note": {
+          "name": "說明",
+          "description": "用一句話說明為什麼這樣做，會顯示在面板的活動紀錄給人看。"
+        }
+      }
+    },
+    "delete_device": {
+      "name": "刪除裝置",
+      "description": "刪除受管裝置和它的實體。需要 admin 使用者。要拿到結果請帶 return_response: true。",
+      "fields": {
+        "device": {
+          "name": "裝置",
+          "description": "裝置名稱或 ID，可從 list_devices 取得。"
+        },
+        "note": {
+          "name": "說明",
+          "description": "用一句話說明為什麼這樣做，會顯示在面板的活動紀錄給人看。"
+        }
+      }
+    },
+    "run_command": {
+      "name": "執行指令",
+      "description": "送出受管裝置的一個指令（含重送）；指令設定了等回覆時，傳回送出的內容和回覆。要拿到結果請帶 return_response: true。",
+      "fields": {
+        "device": {
+          "name": "裝置",
+          "description": "裝置名稱或 ID，可從 list_devices 取得。"
+        },
+        "command": {
+          "name": "指令",
+          "description": "指令名稱或 ID。"
+        },
+        "value": {
+          "name": "數值",
+          "description": "需要數值的指令要代入的 {value}（設備單位）。"
+        },
+        "note": {
+          "name": "說明",
+          "description": "用一句話說明為什麼這樣做，會顯示在面板的活動紀錄給人看。"
+        }
+      }
+    },
+    "learn_command": {
+      "name": "學習指令",
+      "description": "在裝置所在的埠聆聽，把下一筆收到的訊框加成這個裝置的新指令（請先請使用者按原廠遙控器）。傳回裝置和收到的內容。需要 admin 使用者。要拿到結果請帶 return_response: true。",
+      "fields": {
+        "device": {
+          "name": "裝置",
+          "description": "裝置名稱或 ID，可從 list_devices 取得。"
+        },
+        "name": {
+          "name": "指令名稱",
+          "description": "新指令的名稱。"
+        },
+        "timeout": {
+          "name": "等待時間",
+          "description": "最多等幾秒。"
+        },
+        "note": {
+          "name": "說明",
+          "description": "用一句話說明為什麼這樣做，會顯示在面板的活動紀錄給人看。"
+        }
+      }
+    },
+    "learn_button": {
+      "name": "學習按鍵",
+      "description": "在按鍵面板所在的埠聆聽，把下一筆收到的訊框加成新按鍵（請先請使用者按實體按鍵）。傳回面板和收到的內容。需要 admin 使用者。要拿到結果請帶 return_response: true。",
+      "fields": {
+        "device": {
+          "name": "按鍵面板",
+          "description": "按鍵面板的名稱或 ID。"
+        },
+        "name": {
+          "name": "按鍵名稱",
+          "description": "新按鍵的名稱。"
+        },
+        "timeout": {
+          "name": "等待時間",
+          "description": "最多等幾秒。"
+        },
+        "note": {
+          "name": "說明",
+          "description": "用一句話說明為什麼這樣做，會顯示在面板的活動紀錄給人看。"
         }
       }
     }
@@ -241,6 +523,36 @@
     },
     "not_a_port": {
       "message": "{name} 是管理面板，不是埠。"
+    },
+    "panel_not_loaded": {
+      "message": "WOOW 串口的管理面板項目沒有載入，請到「設定 › 裝置與服務」新增。"
+    },
+    "no_port": {
+      "message": "請指定埠：填 port（例如 RS485-1）或 config_entry_id。"
+    },
+    "unknown_port": {
+      "message": "找不到埠「{port}」。現有的埠：{ports}。"
+    },
+    "unknown_device": {
+      "message": "找不到裝置「{device}」。現有的裝置：{devices}。"
+    },
+    "unknown_command": {
+      "message": "{device} 沒有指令「{command}」。現有的指令：{commands}。"
+    },
+    "unknown_template": {
+      "message": "找不到範本「{template}」。現有的範本：{templates}。"
+    },
+    "invalid_device": {
+      "message": "裝置定義不正確（{code}）：{detail}"
+    },
+    "not_a_keypad": {
+      "message": "{device} 不是按鍵面板。"
+    },
+    "bad_input": {
+      "message": "資料不正確：{error}"
+    },
+    "bad_expect": {
+      "message": "預期回覆的樣式無法使用：{error}"
     }
   },
   "device_automation": {

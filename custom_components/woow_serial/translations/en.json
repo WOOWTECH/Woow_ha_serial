@@ -187,23 +187,305 @@
   "services": {
     "send": {
       "name": "Send (serial)",
-      "description": "Send bytes on an RS485 / RS232 port (on-board or bound), optionally waiting for the reply frame.",
+      "description": "Send bytes or text on a port, optionally waiting for the reply frame (returned when a response is requested). Add return_response: true to get the result.",
       "fields": {
         "config_entry_id": {
+          "name": "Port (entry)",
+          "description": "The port's config entry. Give this or `port`."
+        },
+        "port": {
           "name": "Port",
-          "description": "The serial port to send on."
+          "description": "Port name (e.g. RS485-1), device path (/dev/ttySC0) or config entry id, as list_ports returns them."
         },
         "hex": {
           "name": "HEX",
-          "description": "Bytes as hex, e.g. A5 5A 01 02."
+          "description": "Bytes as HEX, e.g. A5 5A 01 02."
         },
         "text": {
           "name": "Text",
           "description": "Text with \\r \\n \\xHH escapes; the port's line ending is appended."
         },
+        "expect": {
+          "name": "Expected reply",
+          "description": "Wait for the first frame matching this receive pattern (HEX with ?? and *, or a regular expression for text) and skip the others, e.g. polls of other devices on the line. Waits wait_ms, 2000 ms if not given; the reply's captures are returned."
+        },
         "wait_ms": {
           "name": "Wait for reply",
-          "description": "0 = do not wait. Otherwise return the next received frame (or timeout) as the response."
+          "description": "0 = do not wait. Otherwise return the next received frame (or timeout)."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why this is done, in a sentence. Shown to people in the panel's activity log."
+        }
+      }
+    },
+    "describe": {
+      "name": "Describe",
+      "description": "Returns how to use this integration: workflow, device types and actions, the device definition fields, command template and receive pattern syntax, checksums, events, current ports, templates and devices. Call this first. Call it with return_response: true."
+    },
+    "list_ports": {
+      "name": "List ports",
+      "description": "Returns every port (on-board UARTs and bound external devices) with its id, name, kind, line settings, availability and counters. Call it with return_response: true."
+    },
+    "get_monitor": {
+      "name": "Get monitor",
+      "description": "Returns the frames the ports have heard, grouped by sender (header / address bytes), with counts, readable text and the checksum each group agrees on. Call it with return_response: true.",
+      "fields": {
+        "port": {
+          "name": "Port",
+          "description": "Port name (e.g. RS485-1), device path (/dev/ttySC0) or config entry id, as list_ports returns them."
+        },
+        "limit": {
+          "name": "Groups",
+          "description": "How many groups to return, most recently heard first."
+        },
+        "include_hidden": {
+          "name": "Include hidden",
+          "description": "Also return groups hidden in the panel."
+        }
+      }
+    },
+    "get_send_log": {
+      "name": "Get send log",
+      "description": "Returns what Home Assistant sent: content, origin (service, entity, panel, device), count, whether the equipment answered (reply and delay) and which other ports heard it. Call it with return_response: true.",
+      "fields": {
+        "port": {
+          "name": "Port",
+          "description": "Port name (e.g. RS485-1), device path (/dev/ttySC0) or config entry id, as list_ports returns them."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "How many entries to return, newest first."
+        }
+      }
+    },
+    "listen": {
+      "name": "Listen",
+      "description": "Waits for the next frame a port hears (not one Home Assistant sent) and returns it: ask the person to press the remote or keypad button first. Call it with return_response: true.",
+      "fields": {
+        "port": {
+          "name": "Port",
+          "description": "Port name (e.g. RS485-1), device path (/dev/ttySC0) or config entry id, as list_ports returns them."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Seconds to wait for the frame."
+        }
+      }
+    },
+    "list_devices": {
+      "name": "List devices",
+      "description": "Returns the managed devices with their full definition, current state and entity ids. Call it with return_response: true.",
+      "fields": {
+        "port": {
+          "name": "Port",
+          "description": "Port name (e.g. RS485-1), device path (/dev/ttySC0) or config entry id, as list_ports returns them."
+        },
+        "type": {
+          "name": "Type",
+          "description": "Only devices / templates of this type."
+        }
+      }
+    },
+    "get_device": {
+      "name": "Get device",
+      "description": "Returns one managed device: definition, state, entity ids and the actions other buttons may bind to it. Call it with return_response: true.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "Device name or id, as list_devices returns them."
+        }
+      }
+    },
+    "preview_command": {
+      "name": "Preview command",
+      "description": "Returns the bytes a command template sends with these parameters and value, or a coded error explaining why it cannot. Call it with return_response: true.",
+      "fields": {
+        "payload": {
+          "name": "Template",
+          "description": "Command template, e.g. 55 {addr} 03 04 {value:u8} {crc16_modbus} or VOL {value:02d}\\r."
+        },
+        "format": {
+          "name": "Format",
+          "description": "hex (bytes) or text (ASCII with escapes / regular expression)."
+        },
+        "params": {
+          "name": "Parameters",
+          "description": "Device parameters as an object of HEX strings, e.g. {\"addr\": \"01 02\"}."
+        },
+        "value": {
+          "name": "Value",
+          "description": "The {value} to use (device units)."
+        }
+      }
+    },
+    "test_pattern": {
+      "name": "Test pattern",
+      "description": "Tries a receive pattern on the frames the monitor holds for a port; returns the frames that match and what each capture reads. Call it with return_response: true.",
+      "fields": {
+        "pattern": {
+          "name": "Pattern",
+          "description": "Receive pattern, e.g. 55 {addr} 01 02 {pos:u8} {crc16_modbus}, or a regular expression for text."
+        },
+        "port": {
+          "name": "Port",
+          "description": "Port name (e.g. RS485-1), device path (/dev/ttySC0) or config entry id, as list_ports returns them."
+        },
+        "format": {
+          "name": "Format",
+          "description": "hex (bytes) or text (ASCII with escapes / regular expression)."
+        },
+        "params": {
+          "name": "Parameters",
+          "description": "Device parameters as an object of HEX strings, e.g. {\"addr\": \"01 02\"}."
+        }
+      }
+    },
+    "list_templates": {
+      "name": "List templates",
+      "description": "Returns the built-in and local device templates: id, brand, model, type, required line settings, parameters, commands and buttons. Call it with return_response: true.",
+      "fields": {
+        "type": {
+          "name": "Type",
+          "description": "Only devices / templates of this type."
+        }
+      }
+    },
+    "get_activity": {
+      "name": "Get activity",
+      "description": "Returns the activity log: what was changed or sent, by whom (service, panel, entity), when, with the note given. Call it with return_response: true.",
+      "fields": {
+        "limit": {
+          "name": "Limit",
+          "description": "How many entries to return, newest first."
+        },
+        "device": {
+          "name": "Device",
+          "description": "Device name or id, as list_devices returns them."
+        }
+      }
+    },
+    "save_device": {
+      "name": "Save device",
+      "description": "Creates or replaces a managed device from a full definition (see describe). Names may stand for ids: the port, command names in actions / options / poll_command, a button's target device. Returns the saved device, or a coded error to fix and resend. Needs an admin user. Add return_response: true to get the result.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "The device definition object: name, type, port (or port_id), params, commands, actions, options, rules, sensors, buttons, ranges, poll_command, poll_interval."
+        },
+        "replace": {
+          "name": "Replace same name",
+          "description": "Saving a device whose name already exists updates that device instead of failing."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why this is done, in a sentence. Shown to people in the panel's activity log."
+        }
+      }
+    },
+    "create_from_template": {
+      "name": "Create from template",
+      "description": "Creates a managed device from a built-in or local template on a port, filling in its parameters (usually the device address). Returns the device and the line settings the equipment expects. Needs an admin user. Add return_response: true to get the result.",
+      "fields": {
+        "template": {
+          "name": "Template",
+          "description": "Template id, from list_templates."
+        },
+        "port": {
+          "name": "Port",
+          "description": "Port name (e.g. RS485-1), device path (/dev/ttySC0) or config entry id, as list_ports returns them."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Device name; the template's name when empty."
+        },
+        "params": {
+          "name": "Parameters",
+          "description": "Device parameters as an object of HEX strings, e.g. {\"addr\": \"01 02\"}."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why this is done, in a sentence. Shown to people in the panel's activity log."
+        }
+      }
+    },
+    "delete_device": {
+      "name": "Delete device",
+      "description": "Deletes a managed device and its entities. Needs an admin user. Add return_response: true to get the result.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "Device name or id, as list_devices returns them."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why this is done, in a sentence. Shown to people in the panel's activity log."
+        }
+      }
+    },
+    "run_command": {
+      "name": "Run command",
+      "description": "Sends one command of a managed device (all its repeats); returns what was sent and the reply when the command waits for one. Add return_response: true to get the result.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "Device name or id, as list_devices returns them."
+        },
+        "command": {
+          "name": "Command",
+          "description": "Command name or id."
+        },
+        "value": {
+          "name": "Value",
+          "description": "The {value} for commands that take one (device units)."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why this is done, in a sentence. Shown to people in the panel's activity log."
+        }
+      }
+    },
+    "learn_command": {
+      "name": "Learn command",
+      "description": "Listens on the device's port and adds the next frame heard as a new command of the device (ask the person to press the original remote first). Returns the device and what was heard. Needs an admin user. Add return_response: true to get the result.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "Device name or id, as list_devices returns them."
+        },
+        "name": {
+          "name": "Command name",
+          "description": "Name of the new command."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Seconds to wait for the frame."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why this is done, in a sentence. Shown to people in the panel's activity log."
+        }
+      }
+    },
+    "learn_button": {
+      "name": "Learn button",
+      "description": "Listens on a keypad's port and adds the next frame heard as a new button (ask the person to press the physical button first). Returns the keypad and what was heard. Needs an admin user. Add return_response: true to get the result.",
+      "fields": {
+        "device": {
+          "name": "Keypad",
+          "description": "Keypad device name or id."
+        },
+        "name": {
+          "name": "Button name",
+          "description": "Name of the new button."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Seconds to wait for the frame."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why this is done, in a sentence. Shown to people in the panel's activity log."
         }
       }
     }
@@ -241,6 +523,36 @@
     },
     "not_a_port": {
       "message": "{name} is the admin panel, not a port."
+    },
+    "panel_not_loaded": {
+      "message": "The WOOW Serial admin entry is not loaded; add it under Settings › Devices & services."
+    },
+    "no_port": {
+      "message": "Name the port: give `port` (e.g. RS485-1) or `config_entry_id`."
+    },
+    "unknown_port": {
+      "message": "No port \"{port}\". Ports: {ports}."
+    },
+    "unknown_device": {
+      "message": "No device \"{device}\". Devices: {devices}."
+    },
+    "unknown_command": {
+      "message": "{device} has no command \"{command}\". Commands: {commands}."
+    },
+    "unknown_template": {
+      "message": "No template \"{template}\". Templates: {templates}."
+    },
+    "invalid_device": {
+      "message": "The device definition is not valid ({code}): {detail}"
+    },
+    "not_a_keypad": {
+      "message": "{device} is not a keypad."
+    },
+    "bad_input": {
+      "message": "Invalid data: {error}"
+    },
+    "bad_expect": {
+      "message": "The expected reply is not a usable receive pattern: {error}"
     }
   },
   "device_automation": {

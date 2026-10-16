@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import voluptuous as vol
 
@@ -14,13 +15,14 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
-from . import websocket_api
+from . import checksum, llm_api, services as agent_services, websocket_api
 from .admin import AdminHub
 from .bus import get_bus
 from .codec import describe, parse_hex, unescape
 from .const import ATTR_ENTRY, CONF_KIND, DOMAIN, KIND_EXTERNAL, KIND_HUB, SERVICE_SEND
 from .external import ExternalHub
 from .hub import Hub, SerialHub
+from .template import Pattern, TemplateError
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.EVENT, Platform.SENSOR, Platform.TEXT]  # each port
@@ -31,11 +33,15 @@ HUB_PLATFORMS = [  # entities of the devices managed from the panel
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _WAIT = vol.All(vol.Coerce(int), vol.Range(min=0, max=60000))
+EXPECT_WAIT = 2.0  # s, when `expect` is given without wait_ms
 SEND_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTRY): cv.string,
+    vol.Exclusive(ATTR_ENTRY, "target"): cv.string,
+    vol.Exclusive("port", "target"): cv.string,  # a port name (RS485-1) or path, handy for agents
     vol.Exclusive("hex", "payload"): cv.string,
     vol.Exclusive("text", "payload"): cv.string,
     vol.Optional("wait_ms", default=0): _WAIT,
+    vol.Optional("expect"): cv.string,  # wait for the first frame matching this receive pattern
+    vol.Optional("note", default=""): cv.string,
 })
 
 
@@ -59,7 +65,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     websocket_api.async_register(hass)
 
     async def send(call: ServiceCall) -> ServiceResponse:
-        hub = _port(hass, call.data[ATTR_ENTRY])
+        if ATTR_ENTRY in call.data:
+            hub = _port(hass, call.data[ATTR_ENTRY])
+        elif "port" in call.data:
+            hub = agent_services.resolve_port(agent_services._admin(hass), call.data["port"])
+        else:
+            raise _invalid("no_port")
         try:
             if "hex" in call.data:
                 data = parse_hex(call.data["hex"])
@@ -70,17 +81,45 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         except ValueError as err:
             raise _invalid("bad_hex" if "hex" in call.data else "bad_text", error=str(err)) from err
         wait = call.data["wait_ms"] / 1000
-        reply = await hub.async_send(data, wait, origin="service")
+        expect = None
+        if call.data.get("expect"):
+            try:
+                expect = Pattern(call.data["expect"], "text" if "text" in call.data else "hex", {})
+            except TemplateError as err:
+                raise _invalid("bad_expect", error=str(err)) from err
+            wait = wait or EXPECT_WAIT
+        admin = hass.data[DOMAIN].get("admin")
+        started = time.monotonic()
+        if expect is not None and admin is not None:  # skip whatever else the line carries meanwhile
+            pending = admin.expect_frame(hub.entry.entry_id, lambda frame: expect.match(frame) is not None)
+            try:
+                await hub.async_send(data, 0, origin="service")
+            except BaseException:
+                admin.forget_frame(hub.entry.entry_id, pending)
+                raise
+            reply = await admin.async_wait_frame(hub.entry.entry_id, pending, wait)
+        else:
+            reply = await hub.async_send(data, wait, origin="service")
+        elapsed = round((time.monotonic() - started) * 1000)
+        if admin is not None and (call.context.user_id or call.data["note"]):  # people / agents, not automations
+            await admin.activity.async_record(
+                "service", "send", "sent", {"hex": describe(data)["hex"], "port": hub.name}, context=call.context,
+                note=call.data["note"], port_id=hub.entry.entry_id)
         if not call.return_response:
             return None
-        response: dict = {"sent": describe(data)}
+        response: dict = {"port": hub.name, "sent": describe(data)}
         if wait > 0:
-            response["reply"] = describe(reply) if reply is not None else None
+            response["reply"] = {**describe(reply), "checks": checksum.detect(reply)} if reply is not None else None
+            if reply is not None and expect is not None:
+                response["reply"]["captures"] = expect.match(reply)
             response["timeout"] = reply is None
+            response["elapsed_ms"] = elapsed
         return response
 
-    hass.services.async_register(DOMAIN, SERVICE_SEND, send, schema=SEND_SCHEMA,
-                                 supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_SEND, agent_services.validated(hass, SEND_SCHEMA, send),
+                                 schema=None, supports_response=SupportsResponse.OPTIONAL)
+    agent_services.async_register(hass)
+    llm_api.async_register(hass)  # the same services as tools for Home Assistant's MCP server
     hass.async_create_task(_async_offer_panel(hass))
     return True
 

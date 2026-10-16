@@ -1,0 +1,54 @@
+{
+  "id": "waveshare_modbus_relay",
+  "name": {"en": "Waveshare Modbus RTU relay (one channel)", "zh-Hant": "Waveshare Modbus RTU 繼電器（單路）"},
+  "brand": "Waveshare",
+  "model": "Modbus RTU Relay, Modbus RTU Relay (D) — 8 channels",
+  "type": "switch",
+  "description": {
+    "en": "One relay channel as a switch: on / off with function 05 (FF00 / 0000), state read back with function 01 every 30 s. The board answers a write with the same frame, which confirms the state. Add one device per channel.",
+    "zh-Hant": "一路繼電器做成開關：功能碼 05 開（FF00）／關（0000），每 30 秒用功能碼 01 讀回狀態。板子收到寫入會原樣回傳，順便確認狀態。每一路各建一個裝置。"
+  },
+  "port": {"bus": "rs485", "baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [
+    {
+      "key": "addr",
+      "default": "01",
+      "description": {
+        "en": "Modbus address 01–FF (set by command, no DIP switches; examples use 01). Every device on the bus needs its own.",
+        "zh-Hant": "Modbus 位址 01–FF（用指令設定，沒有指撥開關；範例都用 01）。同一條匯流排上每台設備的位址都要不同。"
+      }
+    },
+    {
+      "key": "coil",
+      "default": "00 00",
+      "description": {
+        "en": "The channel as a coil address: channel 1 = 00 00 … channel 8 = 00 07.",
+        "zh-Hant": "這一路的線圈位址：第 1 路＝00 00 … 第 8 路＝00 07。"
+      }
+    }
+  ],
+  "device": {
+    "commands": [
+      {"id": "on", "name": {"en": "On", "zh-Hant": "開"}, "payload": "{addr} 05 {coil} FF 00 {crc16_modbus}", "wait_ms": 500},
+      {"id": "off", "name": {"en": "Off", "zh-Hant": "關"}, "payload": "{addr} 05 {coil} 00 00 {crc16_modbus}", "wait_ms": 500},
+      {"id": "flip", "name": {"en": "Flip (sending twice flips back)", "zh-Hant": "翻轉（重送會再翻回來）"}, "payload": "{addr} 05 {coil} 55 00 {crc16_modbus}", "wait_ms": 500},
+      {"id": "read", "name": {"en": "Read state", "zh-Hant": "讀取狀態"}, "payload": "{addr} 01 {coil} 00 01 {crc16_modbus}", "wait_ms": 500}
+    ],
+    "actions": {"turn_on": "on", "turn_off": "off"},
+    "rules": [
+      {"id": "confirm_on", "pattern": "{addr} 05 {coil} FF 00 {crc16_modbus}", "field": "power", "value": "on"},
+      {"id": "confirm_off", "pattern": "{addr} 05 {coil} 00 00 {crc16_modbus}", "field": "power", "value": "off"},
+      {"id": "read", "pattern": "{addr} 01 01 {bits:u8} {crc16_modbus}", "field": "power", "value": "{bits}", "reply_to": "read"}
+    ],
+    "poll_command": "read",
+    "poll_interval": 30
+  },
+  "references": [
+    "https://www.waveshare.com/wiki/Modbus_RTU_Relay",
+    "https://www.waveshare.com/wiki/Modbus_RTU_Relay_(D)"
+  ],
+  "notes": {
+    "en": "The read answer does not say which coil it is for, so each channel only takes the answer to its own read (reply_to). Flip (5500) is Waveshare's own value and is not idempotent: a retried flip undoes itself, so on / off are used for the switch.",
+    "zh-Hant": "讀取的回覆不會寫是哪一路，所以每一路只採用自己那次讀取的回覆（reply_to）。翻轉（5500）是 Waveshare 自訂的值，不是冪等的：重送會再翻回來，所以開關用的是開／關。"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "id": "benq_rs232_projector",
+  "name": {"en": "BenQ projector (RS-232)", "zh-Hant": "BenQ 投影機（RS-232）"},
+  "brand": "BenQ",
+  "model": "Projectors with the '*key=value#' RS-232 protocol (TK, W, MX, MW series)",
+  "type": "media_player",
+  "description": {
+    "en": "Power, source (HDMI 1 / 2, Computer, Video), mute and volume steps; power is polled every 30 s. Commands are '\\r*key=value#\\r'; the projector echoes them and answers '*KEY=VALUE#'.",
+    "zh-Hant": "電源、訊源（HDMI 1／2、電腦、視訊）、靜音和音量增減；電源每 30 秒輪詢一次。指令格式是「\\r*key=value#\\r」；投影機會先回顯指令，再回「*KEY=VALUE#」。"
+  },
+  "port": {"bus": "rs232", "baudrate": 115200, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [],
+  "device": {
+    "commands": [
+      {"id": "power_on", "name": {"en": "Power on", "zh-Hant": "開機"}, "format": "text", "payload": "\\r*pow=on#\\r", "wait_ms": 1000},
+      {"id": "power_off", "name": {"en": "Power off", "zh-Hant": "關機"}, "format": "text", "payload": "\\r*pow=off#\\r", "wait_ms": 1000},
+      {"id": "power_query", "name": {"en": "Query power", "zh-Hant": "查詢電源"}, "format": "text", "payload": "\\r*pow=?#\\r", "wait_ms": 1000},
+      {"id": "hdmi1", "name": "HDMI 1", "format": "text", "payload": "\\r*sour=hdmi#\\r", "wait_ms": 1000},
+      {"id": "hdmi2", "name": "HDMI 2", "format": "text", "payload": "\\r*sour=hdmi2#\\r", "wait_ms": 1000},
+      {"id": "computer", "name": {"en": "Computer", "zh-Hant": "電腦"}, "format": "text", "payload": "\\r*sour=RGB#\\r", "wait_ms": 1000},
+      {"id": "video", "name": {"en": "Video", "zh-Hant": "視訊"}, "format": "text", "payload": "\\r*sour=vid#\\r", "wait_ms": 1000},
+      {"id": "source_query", "name": {"en": "Query source", "zh-Hant": "查詢訊源"}, "format": "text", "payload": "\\r*sour=?#\\r", "wait_ms": 1000},
+      {"id": "mute_on", "name": {"en": "Mute", "zh-Hant": "靜音"}, "format": "text", "payload": "\\r*mute=on#\\r", "wait_ms": 1000},
+      {"id": "mute_off", "name": {"en": "Unmute", "zh-Hant": "取消靜音"}, "format": "text", "payload": "\\r*mute=off#\\r", "wait_ms": 1000},
+      {"id": "volume_up", "name": {"en": "Volume up", "zh-Hant": "音量＋"}, "format": "text", "payload": "\\r*vol=+#\\r", "wait_ms": 1000},
+      {"id": "volume_down", "name": {"en": "Volume down", "zh-Hant": "音量－"}, "format": "text", "payload": "\\r*vol=-#\\r", "wait_ms": 1000}
+    ],
+    "actions": {
+      "turn_on": "power_on", "turn_off": "power_off", "mute_on": "mute_on", "mute_off": "mute_off",
+      "volume_up": "volume_up", "volume_down": "volume_down"
+    },
+    "options": [
+      {"name": "HDMI 1", "command": "hdmi1"},
+      {"name": "HDMI 2", "command": "hdmi2"},
+      {"name": {"en": "Computer", "zh-Hant": "電腦"}, "command": "computer"},
+      {"name": {"en": "Video", "zh-Hant": "視訊"}, "command": "video"}
+    ],
+    "rules": [
+      {"id": "power_on", "format": "text", "pattern": "\\*POW=ON#", "field": "power", "value": "on"},
+      {"id": "power_off", "format": "text", "pattern": "\\*POW=OFF#", "field": "power", "value": "off"},
+      {"id": "source_hdmi1", "format": "text", "pattern": "\\*SOUR=HDMI#", "field": "source", "value": "HDMI 1"},
+      {"id": "source_hdmi2", "format": "text", "pattern": "\\*SOUR=HDMI2#", "field": "source", "value": "HDMI 2"},
+      {"id": "source_computer", "format": "text", "pattern": "\\*SOUR=RGB#", "field": "source", "value": {"en": "Computer", "zh-Hant": "電腦"}},
+      {"id": "source_video", "format": "text", "pattern": "\\*SOUR=VID#", "field": "source", "value": {"en": "Video", "zh-Hant": "視訊"}},
+      {"id": "mute_on", "format": "text", "pattern": "\\*MUTE=ON#", "field": "mute", "value": "on"},
+      {"id": "mute_off", "format": "text", "pattern": "\\*MUTE=OFF#", "field": "mute", "value": "off"}
+    ],
+    "poll_command": "power_query",
+    "poll_interval": 30
+  },
+  "references": [
+    "BenQ TK860 RS232 control guide: https://esupportdownload.benq.com/esupport/PROJECTOR/Control%20Protocols/TK860/RS232%20Control%20Guide_v1.0.1_Windows.pdf",
+    "BenQ MX560 RS232 control guide: https://esupportdownload.benq.com/esupport/PROJECTOR%20FOR%20BUSINESS/Control%20Protocols/MX560/MX560_RS232%20Control%20Guide_1.01_Windows_250213150152.pdf",
+    "https://github.com/rrooggiieerr/benqprojector.py"
+  ],
+  "notes": {
+    "en": "The baud rate is set in the projector's menu (9600 to 115200; TK860 ships at 115200): set the port to match. 'pow=?' only says ON or OFF; while warming up or cooling down most commands answer '*Block item#'. Answers are matched in upper case (*POW=ON#): the projector's echo of a command is in the command's own lower case, so a refused command ('*Block item#') does not change the state. Volume range is not documented (libraries assume 0–20), so only volume steps are mapped.",
+    "zh-Hant": "鮑率在投影機選單裡設定（9600 到 115200；TK860 出廠 115200），埠的設定要一致。「pow=?」只回 ON 或 OFF；暖機或冷卻中大部分指令回「*Block item#」。回覆用大寫比對（*POW=ON#）：投影機回顯的是我們送出的小寫指令，所以被拒絕的指令（「*Block item#」）不會改到狀態。音量範圍官方沒寫（函式庫假設 0–20），所以只對應音量增減。"
+  }
+}

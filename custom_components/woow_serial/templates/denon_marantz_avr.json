@@ -1,0 +1,82 @@
+{
+  "id": "denon_marantz_avr",
+  "name": {"en": "Denon / Marantz AV receiver (RS-232)", "zh-Hant": "Denon／Marantz 擴大機（RS-232）"},
+  "brand": "Denon / Marantz",
+  "model": "AVR-X and SR / NR series (2010 and later)",
+  "type": "media_player",
+  "description": {
+    "en": "Power, master volume (set and steps), mute and input. The receiver reports every change by itself (remote, front panel or RS-232), so the state follows without polling; power is still checked every 60 s. Two-letter ASCII commands ending in CR.",
+    "zh-Hant": "電源、主音量（直接設定和增減）、靜音和訊源。擴大機的狀態一有變化（遙控器、前面板或 RS-232）就會主動送出，狀態不用輪詢就會跟上；電源仍每 60 秒確認一次。指令是兩個字母的 ASCII，以 CR 結尾。"
+  },
+  "port": {"bus": "rs232", "baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [],
+  "device": {
+    "commands": [
+      {"id": "power_on", "name": {"en": "Power on", "zh-Hant": "開機"}, "format": "text", "payload": "PWON\\r", "wait_ms": 500},
+      {"id": "standby", "name": {"en": "Standby", "zh-Hant": "待機"}, "format": "text", "payload": "PWSTANDBY\\r", "wait_ms": 500},
+      {"id": "power_query", "name": {"en": "Query power", "zh-Hant": "查詢電源"}, "format": "text", "payload": "PW?\\r", "wait_ms": 500},
+      {"id": "volume_up", "name": {"en": "Volume up", "zh-Hant": "音量＋"}, "format": "text", "payload": "MVUP\\r", "wait_ms": 500},
+      {"id": "volume_down", "name": {"en": "Volume down", "zh-Hant": "音量－"}, "format": "text", "payload": "MVDOWN\\r", "wait_ms": 500},
+      {"id": "volume_set", "name": {"en": "Set volume", "zh-Hant": "設定音量"}, "format": "text", "payload": "MV{value:02d}\\r", "wait_ms": 500},
+      {"id": "volume_query", "name": {"en": "Query volume", "zh-Hant": "查詢音量"}, "format": "text", "payload": "MV?\\r", "wait_ms": 500},
+      {"id": "mute_on", "name": {"en": "Mute", "zh-Hant": "靜音"}, "format": "text", "payload": "MUON\\r", "wait_ms": 500},
+      {"id": "mute_off", "name": {"en": "Unmute", "zh-Hant": "取消靜音"}, "format": "text", "payload": "MUOFF\\r", "wait_ms": 500},
+      {"id": "input_query", "name": {"en": "Query input", "zh-Hant": "查詢訊源"}, "format": "text", "payload": "SI?\\r", "wait_ms": 500},
+      {"id": "si_cd", "name": "CD", "format": "text", "payload": "SICD\\r", "wait_ms": 500},
+      {"id": "si_dvd", "name": "DVD", "format": "text", "payload": "SIDVD\\r", "wait_ms": 500},
+      {"id": "si_bd", "name": "Blu-ray", "format": "text", "payload": "SIBD\\r", "wait_ms": 500},
+      {"id": "si_game", "name": {"en": "Game", "zh-Hant": "遊戲機"}, "format": "text", "payload": "SIGAME\\r", "wait_ms": 500},
+      {"id": "si_tv", "name": {"en": "TV audio", "zh-Hant": "電視聲音"}, "format": "text", "payload": "SITV\\r", "wait_ms": 500},
+      {"id": "si_sat", "name": {"en": "Cable / Sat", "zh-Hant": "有線／衛星"}, "format": "text", "payload": "SISAT/CBL\\r", "wait_ms": 500},
+      {"id": "si_mplay", "name": {"en": "Media player", "zh-Hant": "媒體播放器"}, "format": "text", "payload": "SIMPLAY\\r", "wait_ms": 500},
+      {"id": "si_tuner", "name": {"en": "Tuner", "zh-Hant": "收音機"}, "format": "text", "payload": "SITUNER\\r", "wait_ms": 500},
+      {"id": "si_aux1", "name": "AUX1", "format": "text", "payload": "SIAUX1\\r", "wait_ms": 500},
+      {"id": "si_net", "name": {"en": "Network", "zh-Hant": "網路"}, "format": "text", "payload": "SINET\\r", "wait_ms": 500}
+    ],
+    "actions": {
+      "turn_on": "power_on", "turn_off": "standby", "volume_up": "volume_up", "volume_down": "volume_down",
+      "set_volume": "volume_set", "mute_on": "mute_on", "mute_off": "mute_off"
+    },
+    "options": [
+      {"name": "CD", "command": "si_cd"},
+      {"name": "DVD", "command": "si_dvd"},
+      {"name": "Blu-ray", "command": "si_bd"},
+      {"name": {"en": "Game", "zh-Hant": "遊戲機"}, "command": "si_game"},
+      {"name": {"en": "TV audio", "zh-Hant": "電視聲音"}, "command": "si_tv"},
+      {"name": {"en": "Cable / Sat", "zh-Hant": "有線／衛星"}, "command": "si_sat"},
+      {"name": {"en": "Media player", "zh-Hant": "媒體播放器"}, "command": "si_mplay"},
+      {"name": {"en": "Tuner", "zh-Hant": "收音機"}, "command": "si_tuner"},
+      {"name": "AUX1", "command": "si_aux1"},
+      {"name": {"en": "Network", "zh-Hant": "網路"}, "command": "si_net"}
+    ],
+    "rules": [
+      {"id": "power_on", "format": "text", "pattern": "PWON", "field": "power", "value": "on"},
+      {"id": "power_standby", "format": "text", "pattern": "PWSTANDBY", "field": "power", "value": "off"},
+      {"id": "volume", "format": "text", "pattern": "MV(?P<volume>[0-8]\\d|9[0-8])", "field": "volume", "value": "{volume}"},
+      {"id": "mute_on", "format": "text", "pattern": "MUON", "field": "mute", "value": "on"},
+      {"id": "mute_off", "format": "text", "pattern": "MUOFF", "field": "mute", "value": "off"},
+      {"id": "si_cd", "format": "text", "pattern": "SICD\\b", "field": "source", "value": "CD"},
+      {"id": "si_dvd", "format": "text", "pattern": "SIDVD\\b", "field": "source", "value": "DVD"},
+      {"id": "si_bd", "format": "text", "pattern": "SIBD\\b", "field": "source", "value": "Blu-ray"},
+      {"id": "si_game", "format": "text", "pattern": "SIGAME\\b", "field": "source", "value": {"en": "Game", "zh-Hant": "遊戲機"}},
+      {"id": "si_tv", "format": "text", "pattern": "SITV\\b", "field": "source", "value": {"en": "TV audio", "zh-Hant": "電視聲音"}},
+      {"id": "si_sat", "format": "text", "pattern": "SISAT/CBL\\b", "field": "source", "value": {"en": "Cable / Sat", "zh-Hant": "有線／衛星"}},
+      {"id": "si_mplay", "format": "text", "pattern": "SIMPLAY\\b", "field": "source", "value": {"en": "Media player", "zh-Hant": "媒體播放器"}},
+      {"id": "si_tuner", "format": "text", "pattern": "SITUNER\\b", "field": "source", "value": {"en": "Tuner", "zh-Hant": "收音機"}},
+      {"id": "si_aux1", "format": "text", "pattern": "SIAUX1\\b", "field": "source", "value": "AUX1"},
+      {"id": "si_net", "format": "text", "pattern": "SINET\\b", "field": "source", "value": {"en": "Network", "zh-Hant": "網路"}}
+    ],
+    "ranges": {"volume": [0, 80]},
+    "poll_command": "power_query",
+    "poll_interval": 60
+  },
+  "references": [
+    "Denon AVR-X2000 RS-232C / IP protocol: https://assets.denon.com/documentmaster/uk/avrx2000_e400_protocol(1010)_v03.pdf",
+    "Marantz 2014 NR / SR series RS-232C / IP protocol: https://www.marantz.com/on/demandware.static/-/Library-Sites-marantz_northamerica_shared/default/dwd4037f30/archive-downloads/marantz-2014-nr-series---sr-series-rs232-ip-protocol.xls",
+    "https://forum.iobroker.net/topic/13235/aufruf-denon-marantz-adapter/63"
+  ],
+  "notes": {
+    "en": "Volume 100 % is mapped to MV80 (0 dB, reference level); MV98 is +18 dB, so widen ranges.volume to [0, 98] only on purpose. Half steps (MV505) are read as the whole step. Wait 1 s after power on before the next command, and 50 ms between commands. Older Marantz models (SR5001, SR9600 …) use a different '@PWR:2' protocol.",
+    "zh-Hant": "音量 100% 對應 MV80（0 dB，參考音量）；MV98 是 +18 dB，要刻意才把 ranges.volume 放寬成 [0, 98]。半格（MV505）會讀成整格。開機後要等 1 秒才能送下一筆，指令之間至少隔 50 ms。較舊的 Marantz（SR5001、SR9600 等）用的是不同的「@PWR:2」協定。"
+  }
+}

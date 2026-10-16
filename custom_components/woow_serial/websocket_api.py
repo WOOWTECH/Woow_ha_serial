@@ -32,6 +32,18 @@ def async_register(hass: HomeAssistant) -> None:
         websocket_api.async_register_command(hass, handler)
 
 
+async def _log(admin: AdminHub, connection: websocket_api.ActiveConnection, action: str, msg: str,
+               args: dict[str, Any], **extra: Any) -> None:
+    """Panel changes go to the activity log next to the agents' ones."""
+    user = connection.user.name if connection.user is not None else None
+    await admin.activity.async_record("panel", action, msg, args, user=user, **extra)
+
+
+def _port_name(admin: AdminHub, port_id: str) -> str:
+    hub = admin.bus.ports.get(port_id)
+    return hub.name if hub else "?"
+
+
 def _admin(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> AdminHub | None:
     admin = hass.data.get(DOMAIN, {}).get("admin")
     if admin is None:
@@ -86,6 +98,8 @@ async def ws_send(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
     except HomeAssistantError as err:
         connection.send_error(msg["id"], "send_failed", str(err))
     else:
+        await _log(admin, connection, "send", "sent", {"hex": result["sent"], "port": _port_name(admin, msg["port_id"])},
+                   port_id=msg["port_id"])
         connection.send_result(msg["id"], result)
 
 
@@ -197,11 +211,45 @@ async def ws_device_save(hass: HomeAssistant, connection: websocket_api.ActiveCo
     """Create or replace a device (commands, mapping, rules and sensors in one go)."""
     if (admin := _admin(hass, connection, msg)) is None:
         return
+    existed = msg["device"].get("id") in admin.devices.devices
     try:
         device = await admin.devices.async_save_device(msg["device"])
     except DeviceError as err:
         connection.send_result(msg["id"], {"error": err.as_dict()})
         return
+    await _log(admin, connection, "save_device", "device_updated" if existed else "device_created",
+               {"device": device.name, "type": device.type, "port": _port_name(admin, device.port_id)},
+               device_id=device.id, port_id=device.port_id)
+    connection.send_result(msg["id"], {"device": admin.devices.device_dict(device)})
+
+
+@_command
+@websocket_api.require_admin
+@websocket_api.websocket_command({
+    vol.Required("type"): "woow_serial/templates/create",
+    vol.Required("template"): str,
+    vol.Required("port_id"): str,
+    vol.Optional("name", default=""): str,
+    vol.Optional("params", default={}): {str: str},
+})
+@websocket_api.async_response
+async def ws_template_create(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    """A device from a template, created in the panel."""
+    if (admin := _admin(hass, connection, msg)) is None:
+        return
+    template = admin.templates.get(msg["template"])
+    if template is None:
+        connection.send_error(msg["id"], "not_found", "No such template")
+        return
+    raw = template.instantiate(msg["port_id"], msg["name"], msg["params"], hass.config.language or "en")
+    try:
+        device = await admin.devices.async_save_device(raw)
+    except DeviceError as err:
+        connection.send_result(msg["id"], {"error": err.as_dict()})
+        return
+    await _log(admin, connection, "create_from_template", "device_from_template",
+               {"device": device.name, "type": device.type, "port": _port_name(admin, device.port_id),
+                "template": template.id}, device_id=device.id, port_id=device.port_id)
     connection.send_result(msg["id"], {"device": admin.devices.device_dict(device)})
 
 
@@ -214,7 +262,11 @@ async def ws_device_save(hass: HomeAssistant, connection: websocket_api.ActiveCo
 @websocket_api.async_response
 async def ws_device_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
     if (admin := _admin(hass, connection, msg)) is not None:
+        device = admin.devices.devices.get(msg["device_id"])
         await admin.devices.async_delete_device(msg["device_id"])
+        if device is not None:
+            await _log(admin, connection, "delete_device", "device_deleted", {"device": device.name},
+                       device_id=device.id, port_id=device.port_id)
         connection.send_result(msg["id"])
 
 
@@ -239,6 +291,11 @@ async def ws_device_run(hass: HomeAssistant, connection: websocket_api.ActiveCon
     except HomeAssistantError as err:
         connection.send_error(msg["id"], "send_failed", str(err))
         return
+    device = admin.devices.devices[msg["device_id"]]
+    command = device.command(msg["command_id"])
+    await _log(admin, connection, "run_command", "command_tested",
+               {"device": device.name, "command": command.name if command else "?", "hex": to_hex(sent)},
+               device_id=device.id, port_id=device.port_id)
     connection.send_result(msg["id"], {"sent": to_hex(sent), "reply": None if reply is None else to_hex(reply)})
 
 

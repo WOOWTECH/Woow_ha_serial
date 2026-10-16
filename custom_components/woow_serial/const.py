@@ -83,6 +83,7 @@ CATALOG_TOTAL_ROWS = 5000
 MIRROR_ROWS = 500
 REPLY_WINDOW = 0.5  # s: the first frame on the same port this soon after a send is its reply
 REPLY_WINDOW_EXTERNAL = 1.5  # external ports report through their integration, which adds latency
+EXTERNAL_LATENCY = 0.5  # s added to a wait on an external port: the answer reaches HA that much later
 HEARD_WINDOW = 1.5  # s: our own bytes heard on another port this soon are an echo, not news
 LIVE_PUSH = 0.3  # s between pushes to the panel
 LIVE_MAX = 200  # frames per push; the rest are only counted

@@ -92,6 +92,8 @@ export interface Command {
   repeat: number;
   gap_ms: number;
   wait_ms: number;
+  then?: string; // a command id sent then_ms later (usually a query)
+  then_ms?: number;
 }
 
 export interface Rule {
@@ -100,6 +102,7 @@ export interface Rule {
   format: Format;
   field: string;
   value: string;
+  reply_to?: string; // a command id: only its reply counts
 }
 
 export interface SensorDef {
@@ -113,6 +116,7 @@ export interface SensorDef {
   unit: string;
   device_class: string;
   precision: number | null;
+  reply_to?: string;
 }
 
 export interface OptionDef {
@@ -170,6 +174,43 @@ export interface DevicesSnapshot {
   value_actions: Record<string, string>;
 }
 
+export interface Activity {
+  t: number;
+  channel: "service" | "panel" | "entity" | string;
+  action: string;
+  summary: string;
+  ok: boolean;
+  user: string | null;
+  note: string;
+  device_id: string | null;
+  port_id: string | null;
+  detail: Record<string, unknown>;
+  msg?: string; // a log_<msg> translation key; summary is the English line
+  args?: Record<string, string | number>;
+}
+
+export interface TemplateParam {
+  key: string;
+  default: string;
+  description: string;
+}
+
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  brand: string;
+  model: string;
+  type: string;
+  description: string;
+  port: Record<string, unknown>;
+  params: TemplateParam[];
+  commands: string[];
+  buttons: string[];
+  notes: string;
+  references: string[];
+  source: string;
+}
+
 /** An error the backend explains with a code (devices.DeviceError / template.TemplateError). */
 export interface CodedError {
   code: string;
@@ -181,6 +222,8 @@ export interface Snapshot {
   catalog: { groups: Group[]; rows: Row[]; prefix: Record<string, number> };
   mirror: { rows: Sent[] };
   devices: DevicesSnapshot;
+  activity: Activity[];
+  templates: TemplateSummary[];
 }
 
 export type FeedEvent =
@@ -189,7 +232,8 @@ export type FeedEvent =
   | { kind: "catalog"; groups: Group[]; rows: Row[]; removed: string[] }
   | { kind: "mirror"; rows: Sent[]; removed: string[] }
   | { kind: "devices"; devices: Device[]; removed: string[] }
-  | { kind: "device_state"; states: Record<string, DeviceState> };
+  | { kind: "device_state"; states: Record<string, DeviceState> }
+  | { kind: "activity"; entries: Activity[] };
 
 export interface SendResult {
   sent: string;
@@ -253,6 +297,10 @@ export class Api {
 
   saveDevice(device: Partial<Device>): Promise<{ device?: Device; error?: CodedError }> {
     return this.hass().callWS({ type: "woow_serial/devices/save", device });
+  }
+
+  createFromTemplate(template: string, portId: string, name: string, params: Record<string, string>): Promise<{ device?: Device; error?: CodedError }> {
+    return this.hass().callWS({ type: "woow_serial/templates/create", template, port_id: portId, name, params });
   }
 
   deleteDevice(deviceId: string): Promise<void> {

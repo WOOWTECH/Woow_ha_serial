@@ -1,0 +1,48 @@
+{
+  "id": "extron_sis_matrix_output",
+  "name": {"en": "Extron matrix switcher output (SIS)", "zh-Hant": "Extron 矩陣切換器的一個輸出（SIS）"},
+  "brand": "Extron",
+  "model": "DXP HD 4K PLUS and other SIS matrix switchers",
+  "type": "select",
+  "description": {
+    "en": "One output of the matrix as a select: picking an input ties it to this output (audio and video). The switcher confirms each tie with 'OutN InM All'. Add one device per output.",
+    "zh-Hant": "矩陣的一個輸出做成選單：選一個輸入就把它接到這個輸出（影音一起）。切換器每次接線都會回「OutN InM All」確認。每個輸出各建一個裝置。"
+  },
+  "port": {"bus": "rs232", "baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [
+    {
+      "key": "output",
+      "default": "1",
+      "description": {"en": "Output number, as text (1, 2 …).", "zh-Hant": "輸出編號，用文字填（1、2 …）。"}
+    }
+  ],
+  "device": {
+    "commands": [
+      {"id": "in1", "name": {"en": "Input 1", "zh-Hant": "輸入 1"}, "format": "text", "payload": "1*{output}!", "wait_ms": 500},
+      {"id": "in2", "name": {"en": "Input 2", "zh-Hant": "輸入 2"}, "format": "text", "payload": "2*{output}!", "wait_ms": 500},
+      {"id": "in3", "name": {"en": "Input 3", "zh-Hant": "輸入 3"}, "format": "text", "payload": "3*{output}!", "wait_ms": 500},
+      {"id": "in4", "name": {"en": "Input 4", "zh-Hant": "輸入 4"}, "format": "text", "payload": "4*{output}!", "wait_ms": 500},
+      {"id": "off", "name": {"en": "Untie", "zh-Hant": "解除連接"}, "format": "text", "payload": "0*{output}!", "wait_ms": 500},
+      {"id": "verbose", "name": {"en": "Verbose mode 3", "zh-Hant": "詳細回覆模式 3"}, "format": "text", "payload": "\\x1b3CV\\r", "wait_ms": 500}
+    ],
+    "options": [
+      {"name": {"en": "Input 1", "zh-Hant": "輸入 1"}, "command": "in1"},
+      {"name": {"en": "Input 2", "zh-Hant": "輸入 2"}, "command": "in2"},
+      {"name": {"en": "Input 3", "zh-Hant": "輸入 3"}, "command": "in3"},
+      {"name": {"en": "Input 4", "zh-Hant": "輸入 4"}, "command": "in4"}
+    ],
+    "rules": [
+      {"id": "in1", "format": "text", "pattern": "Out0*{output} In0*1 (All|Vid)", "field": "option", "value": {"en": "Input 1", "zh-Hant": "輸入 1"}},
+      {"id": "in2", "format": "text", "pattern": "Out0*{output} In0*2 (All|Vid)", "field": "option", "value": {"en": "Input 2", "zh-Hant": "輸入 2"}},
+      {"id": "in3", "format": "text", "pattern": "Out0*{output} In0*3 (All|Vid)", "field": "option", "value": {"en": "Input 3", "zh-Hant": "輸入 3"}},
+      {"id": "in4", "format": "text", "pattern": "Out0*{output} In0*4 (All|Vid)", "field": "option", "value": {"en": "Input 4", "zh-Hant": "輸入 4"}}
+    ]
+  },
+  "references": [
+    "Extron DXP HD 4K PLUS user guide (SIS commands): https://media.extron.com/public/download/files/userman/68-2939-01_A_DXPHD4KPLUS_user_guide.pdf"
+  ],
+  "notes": {
+    "en": "Written for a 4×4 matrix: add commands, options and rules for more inputs. Over RS-232 the switcher starts in verbose mode 1; in modes 2 and 3 a view command ('2!') also answers 'OutN InM All', so 'Verbose mode 3' lets a query show the current input. After power-up it sends a copyright line, which is ignored. Errors: E01 input, E10 command, E12 output, E13 parameter.",
+    "zh-Hant": "依 4×4 矩陣寫的：輸入更多時，請加指令、選項和規則。RS-232 預設是詳細回覆模式 1；模式 2、3 下查詢指令（「2!」）也會回「OutN InM All」，所以送一次「詳細回覆模式 3」之後就能用查詢看目前的輸入。開機後會送一行版權訊息，會被忽略。錯誤碼：E01 輸入、E10 指令、E12 輸出、E13 參數。"
+  }
+}

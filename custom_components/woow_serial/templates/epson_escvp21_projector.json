@@ -1,0 +1,61 @@
+{
+  "id": "epson_escvp21_projector",
+  "name": {"en": "Epson projector (ESC/VP21)", "zh-Hant": "Epson 投影機（ESC/VP21）"},
+  "brand": "Epson",
+  "model": "ESC/VP21 projectors (EB / EH / EF series with RS-232C)",
+  "type": "media_player",
+  "description": {
+    "en": "Power, source (HDMI 1 / 2, Computer 1, Video), A/V mute and volume steps. Each setting is followed by a query, and power is polled every 30 s. ASCII commands end in CR; the projector answers ':' when ready, 'NAME=value' to queries and 'ERR' when it cannot.",
+    "zh-Hant": "電源、訊源（HDMI 1／2、電腦 1、視訊）、A/V 靜音和音量增減。每個設定之後會接著查詢，電源每 30 秒輪詢一次。ASCII 指令以 CR 結尾；投影機就緒時回「:」，查詢回「名稱=值」，不能執行時回「ERR」。"
+  },
+  "port": {"bus": "rs232", "baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1},
+  "params": [],
+  "device": {
+    "commands": [
+      {"id": "power_on", "name": {"en": "Power on", "zh-Hant": "開機"}, "format": "text", "payload": "PWR ON\\r", "then": "power_query", "then_ms": 2000, "wait_ms": 1000},
+      {"id": "power_off", "name": {"en": "Power off", "zh-Hant": "關機"}, "format": "text", "payload": "PWR OFF\\r", "then": "power_query", "then_ms": 2000, "wait_ms": 1000},
+      {"id": "power_query", "name": {"en": "Query power", "zh-Hant": "查詢電源"}, "format": "text", "payload": "PWR?\\r", "wait_ms": 1000},
+      {"id": "hdmi1", "name": "HDMI 1", "format": "text", "payload": "SOURCE 30\\r", "then": "source_query", "then_ms": 3000, "wait_ms": 1000},
+      {"id": "hdmi2", "name": "HDMI 2", "format": "text", "payload": "SOURCE A0\\r", "then": "source_query", "then_ms": 3000, "wait_ms": 1000},
+      {"id": "computer1", "name": {"en": "Computer 1", "zh-Hant": "電腦 1"}, "format": "text", "payload": "SOURCE 10\\r", "then": "source_query", "then_ms": 3000, "wait_ms": 1000},
+      {"id": "video", "name": {"en": "Video", "zh-Hant": "視訊"}, "format": "text", "payload": "SOURCE 41\\r", "then": "source_query", "then_ms": 3000, "wait_ms": 1000},
+      {"id": "source_query", "name": {"en": "Query source", "zh-Hant": "查詢訊源"}, "format": "text", "payload": "SOURCE?\\r", "wait_ms": 1000},
+      {"id": "mute_on", "name": {"en": "A/V mute on", "zh-Hant": "A/V 靜音"}, "format": "text", "payload": "MUTE ON\\r", "then": "mute_query", "then_ms": 1000, "wait_ms": 1000},
+      {"id": "mute_off", "name": {"en": "A/V mute off", "zh-Hant": "取消 A/V 靜音"}, "format": "text", "payload": "MUTE OFF\\r", "then": "mute_query", "then_ms": 1000, "wait_ms": 1000},
+      {"id": "mute_query", "name": {"en": "Query mute", "zh-Hant": "查詢靜音"}, "format": "text", "payload": "MUTE?\\r", "wait_ms": 1000},
+      {"id": "volume_up", "name": {"en": "Volume up", "zh-Hant": "音量＋"}, "format": "text", "payload": "VOL INC\\r", "wait_ms": 1000},
+      {"id": "volume_down", "name": {"en": "Volume down", "zh-Hant": "音量－"}, "format": "text", "payload": "VOL DEC\\r", "wait_ms": 1000}
+    ],
+    "actions": {
+      "turn_on": "power_on", "turn_off": "power_off", "mute_on": "mute_on", "mute_off": "mute_off",
+      "volume_up": "volume_up", "volume_down": "volume_down"
+    },
+    "options": [
+      {"name": "HDMI 1", "command": "hdmi1"},
+      {"name": "HDMI 2", "command": "hdmi2"},
+      {"name": {"en": "Computer 1", "zh-Hant": "電腦 1"}, "command": "computer1"},
+      {"name": {"en": "Video", "zh-Hant": "視訊"}, "command": "video"}
+    ],
+    "rules": [
+      {"id": "power_on", "format": "text", "pattern": "PWR=0[12]", "field": "power", "value": "on"},
+      {"id": "power_off", "format": "text", "pattern": "PWR=0[03459]", "field": "power", "value": "off"},
+      {"id": "source_hdmi1", "format": "text", "pattern": "SOURCE=30", "field": "source", "value": "HDMI 1"},
+      {"id": "source_hdmi2", "format": "text", "pattern": "SOURCE=A0", "field": "source", "value": "HDMI 2"},
+      {"id": "source_computer1", "format": "text", "pattern": "SOURCE=10", "field": "source", "value": {"en": "Computer 1", "zh-Hant": "電腦 1"}},
+      {"id": "source_video", "format": "text", "pattern": "SOURCE=41", "field": "source", "value": {"en": "Video", "zh-Hant": "視訊"}},
+      {"id": "mute_on", "format": "text", "pattern": "MUTE=ON", "field": "mute", "value": "on"},
+      {"id": "mute_off", "format": "text", "pattern": "MUTE=OFF", "field": "mute", "value": "off"}
+    ],
+    "poll_command": "power_query",
+    "poll_interval": 30
+  },
+  "references": [
+    "Epson ESC/VP21 command guide and command list (Rev W): https://files.support.epson.com/pdf/escvp21/escvp21all_en_revs_20250717.zip",
+    "https://files.support.epson.com/docid/cpd6/cpd65395/EN/Monitoring/Reference/esc_vp21_command_list.html",
+    "https://github.com/openhab/openhab-addons/tree/main/bundles/org.openhab.binding.epsonprojector"
+  ],
+  "notes": {
+    "en": "Power on takes 30–40 s (PWR? answers 02 while warming up, shown as on); in standby most commands answer ERR. Source codes and the volume range differ by model (older home models: HDMI = 30; the 2025 command list has one sheet per model). The projector does not echo commands; use a null-modem cable on most models.",
+    "zh-Hant": "開機要 30–40 秒（暖機中 PWR? 回 02，顯示為開機）；待機時大部分指令會回 ERR。訊源代碼和音量範圍依機型不同（舊家用機種 HDMI＝30；2025 版指令表每個機型一頁）。投影機不回顯指令；多數機型要用交叉線（null modem）。"
+  }
+}

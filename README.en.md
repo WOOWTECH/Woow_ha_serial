@@ -24,6 +24,8 @@ The admin panel follows the approach of [HAIR](https://github.com/DAB-LABS/HAIR)
 - **Send log**
   - Every frame Home Assistant sent, who sent it (service, entity, panel, device), and whether and how fast the device answered.
   - If another port on the same line hears it, the send log shows it. That proves it reached the wire, and such echoes never reach the monitor or keypads.
+- **Built-in templates**: Dooya and A-OK curtain motors, Waveshare Modbus relays, XY-MD02 temperature / humidity, Epson and BenQ projectors, Denon / Marantz receivers, Extron and "1V2." HDMI matrices. Every template's frames were checked byte for byte against the maker's documented examples. Your own templates can be added.
+- **Made for AI agents**: everything the panel does is a Home Assistant service with response data, for [ha-mcp](https://github.com/homeassistant-ai/ha-mcp) or Home Assistant's own MCP server. Each change an agent makes is listed in the panel's Activity tab with the reason it gave.
 - **Service and events**: `woow_serial.send` sends HEX or text and can wait for the reply; the events `woow_serial_frame` and `woow_serial_button` work as automation triggers.
 - English and Traditional Chinese. No extra Python packages.
 
@@ -64,8 +66,11 @@ Each port's settings can be changed later; the port reloads by itself.
 | Devices | Devices and keypads, and their editor |
 | Monitor | Frames heard, grouped by sender |
 | Send log | Frames sent, their origin, replies, and which other ports heard them |
+| Activity | Who changed or sent what: agents and scripts (services), people in the panel, entity actions, with their reasons |
 
 ### Building a device
+
+For a known model, choose "From template" on the Devices tab: pick the template and the port, fill in the address. Otherwise:
 
 1. Operate the equipment once with its original remote or panel. The frame shows up in the Monitor.
 2. Choose "Add to device" on that frame: an existing device, or a new one.
@@ -82,12 +87,17 @@ Write commands the way the protocol sheet prints them; braces put values in:
 | Syntax | Meaning |
 |---|---|
 | `55 01 02 03 01` | Fixed HEX. Spaces, commas and `0x55` are fine |
-| `{addr}` | A device parameter (HEX), e.g. the device address |
+| `{addr}` | A device parameter: HEX in HEX commands (a device address), text in text commands (an output number such as `2`) |
 | `{value:u8}` | A value. Types: `u8 s8 u16 u16le s16 s16le u24 u32 u32le s32 s32le bcd bcd2` |
 | `{crc16_modbus}` | A checksum over all bytes before it. `{sum8@1}` starts at the second byte |
 | `PWR ON\r` | Text format: `\r \n \t \xHH` escapes; values as `{value:03d}` |
 
 `{value}` comes from the entity (brightness, position, volume) and is scaled to the device's own numbers by the value ranges, e.g. volume 0–60 or a reversed 100–0.
+
+Each command can also have:
+- **Repeat** and a gap: how many times it is sent.
+- **Wait for reply**: set it on every command the equipment answers (Modbus, most RS485 motors, RS232 AV gear). The port is held until the answer arrives (or the time is up), so the next request cannot collide with the answer on a half-duplex RS485 line. The built-in templates do this.
+- **Then send**: another command a moment later, usually a query. Much equipment only acknowledges a setting (an Epson projector answers `:`), and the query tells the real state.
 
 Checksums: `crc16_modbus`, `crc16_ccitt`, `crc16_xmodem`, `sum16`, `crc8`, `crc8_maxim`, `xor8`, `sum8`, `sum8_neg`.
 
@@ -102,7 +112,11 @@ Checksums: `crc16_modbus`, `crc16_ccitt`, `crc16_xmodem`, `sum16`, `crc8`, `crc8
 | `*` | At the end: ignore the remaining bytes |
 | `^PWR=(?P<p>\d+)` | Text format: a regular expression with named groups |
 
-For example, a curtain reporting its position: `55 {addr} 01 02 {pos:u8} {crc16_modbus}`, state "Position", value `{pos}`. "Try" in the editor tests a pattern on the frames in the monitor.
+For example, a Dooya curtain reporting its position: `55 {addr} 01 01 {pos:u8} {crc16_modbus}`, state "Position", value `{pos}`. "Try" in the editor tests a pattern on the frames in the monitor.
+
+- In text patterns `{param}` stands for a device parameter, e.g. `Out0*{output} In0*3 All` for an Extron matrix.
+- **Only the reply to**: a Modbus answer does not name the register it answers, so each channel of a relay board should take only the answer to its own read. Choose this on the rule or sensor.
+- A position or brightness read back outside the device's value range is ignored: a Dooya motor answers `FF` before its limits are set, which is not "fully open". A volume past the range counts as its end.
 
 ### Keypads
 
@@ -135,13 +149,55 @@ triggers:
       hex: "A5 5A 01"
 ```
 
+```yaml
+# Other equipment is polled on the line: wait for the answer that matches
+action: woow_serial.send
+data:
+  port: RS485-1
+  hex: "04 04 00 01 00 02 20 5E"
+  expect: "04 04 04 {t:s16} {h:u16} {crc16_modbus}"
+  wait_ms: 2000
+response_variable: r   # r.reply.captures.t = -55 (-5.5 °C)
+```
+
 `woow_serial_button` event data: `keypad`, `button`, `button_id`, `hex`, and every value the pattern reads.
+
+## Built-in templates
+
+| Template | Type | Line | Parameters |
+|---|---|---|---|
+| Dooya curtain motor (RS485, protocol A4) | Cover | 9600 8N1 | `addr`, factory `FE FE` |
+| A-OK curtain motor (RS485) | Cover (reversed position, mapped) | 2400 8N1 | `id`, `ch` (channel mask) |
+| Waveshare Modbus RTU relay (one channel) | Switch (a device per channel) | 9600 8N1 | `addr`, `coil` (`00 00`–`00 07`) |
+| XY-MD02 temperature and humidity sensor | Sensors | 9600 8N1 | `addr` |
+| Epson projector (ESC/VP21) | Media player | 9600 8N1 | — |
+| BenQ projector | Media player | as set in its menu; TK860 ships at 115200 | — |
+| Denon / Marantz AV receiver | Media player | 9600 8N1 | — |
+| Extron matrix switcher output (SIS) | Select | 9600 8N1 | `output` |
+| HDMI matrix output ("1V2." protocol) | Select | 9600 8N1 | `output` |
+
+Each template names the maker's document it follows and site notes (address clashes, baud rate, direction). Your own templates go in `<config>/woow_serial/templates/*.json`, in the same format; one with the same id replaces the built-in one.
+
+## For AI agents
+
+Agents act without asking for confirmation; every change is listed in the Activity tab. The full guide for agents is [`llms.txt`](llms.txt). In short:
+
+- **Connecting**
+  - [ha-mcp](https://github.com/homeassistant-ai/ha-mcp): call `woow_serial.*` with `ha_call_service` and `return_response: true`.
+  - Home Assistant's MCP server (admin): the services are also tools of the LLM API "WOOW Serial", named `woow-serial__<service>` when the server offers all LLM APIs, or served alone at `/api/mcp/woow_serial`.
+- **Workflow**: `describe`, then `list_ports`. Known models: `list_templates`, `create_from_template`. Other equipment: learn it with `get_monitor`, `listen` or `learn_command` / `learn_button`, then `save_device`. Operate through the entities or `run_command`; check with `get_device`, `get_send_log`, `get_activity`.
+- **Names work everywhere** in place of ids. A definition that cannot be saved comes back as a coded error to fix and resend.
+- **Permissions**: configuration changes (saving, deleting, learning, creating from a template) need an admin user; operating equipment does not.
+- Give each change a `note`: one sentence on why. It is shown in the activity log.
 
 ## Notes
 
 - A port serves one program at a time: it is opened exclusively.
 - The frame gap decides where one frame ends. Automatic is 24 character times, at least 20 ms. Raise it in the port settings for devices that pause inside a frame; the HA-WF485-V3 needs 100 ms.
-- External devices report through a sensor entity: the same data twice in a row is only seen twice if the sensor goes back to its idle value (such as IDLE) in between. The HA-WF485-V3 does.
+- External devices report through a sensor entity: the same data twice in a row is only seen twice if the sensor goes back to its idle value (such as IDLE) in between. The HA-WF485-V3 does: it joins two frames less than about 0.1 s apart, and shows the same content again only after about 0.35 s (back at IDLE).
+- Joined frames are taken apart: a received frame that matches no pattern as a whole but is made entirely of known frames (the HEX patterns of the port's devices, and frames we just sent that a device echoes) is handled piece by piece — a keypad sending a press twice back to back, or a key press joined to a poll answer by a WF485. A frame with any unknown byte is left alone, so no press is ever made up.
+- Waits on external ports allow 0.5 s more, for the answer's trip through the other integration.
+- RS485 is half duplex: equipment that sends by itself (wall keypads) can collide with polling. Keep poll intervals modest.
 
 ## Development
 
@@ -150,7 +206,10 @@ cd frontend && npm install && npm run build   # panel (Lit + TypeScript + rollup
 pip install homeassistant==2026.10.1 pytest && pytest tests   # unit tests
 ```
 
-`tools/` holds the checks and live tests used on real hardware.
+- `tests/test_templates.py`: every built-in template's frames against the maker's documented examples, byte for byte.
+- `tests/test_sim_bus.py`: a virtual bus. The templates drive simulated equipment written separately from the same documents (`tools/sim/protocols.py`), so each checks the other — no hardware, runs in CI.
+- `tools/sim/matrix.py`: the live test matrix on two RS485 / RS232 loops, with the on-board port and an HA-WF485-V3 taking turns as the controller and the simulator on the other end, driven through the services an agent uses.
+- The rest of `tools/` are checks and live tests used on real hardware.
 
 ## License
 

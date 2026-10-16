@@ -8,6 +8,7 @@ import json
 import os
 import socket
 import struct
+import threading
 import urllib.request
 
 TOKEN = os.environ["SUPERVISOR_TOKEN"]
@@ -15,7 +16,8 @@ TOKEN = os.environ["SUPERVISOR_TOKEN"]
 
 class WS:
     def __init__(self):
-        self.sock = socket.create_connection(("supervisor", 80), timeout=60)
+        self.sock = socket.create_connection(("supervisor", 80), timeout=300)
+        self._send_lock = threading.Lock()  # a reader thread answers pings while another thread sends
         key = base64.b64encode(os.urandom(16)).decode()
         self.sock.sendall(f"GET /core/websocket HTTP/1.1\r\nHost: supervisor\r\nUpgrade: websocket\r\n"
                           f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n".encode())
@@ -49,16 +51,21 @@ class WS:
             elif n == 127:
                 n = struct.unpack(">Q", self.read(8))[0]
             payload = self.read(n)
-            if (b1 & 0x0F) in (9, 10):  # ping / pong
+            if (b1 & 0x0F) == 9:  # ping: answer it, or Home Assistant drops the connection after ~1 min
+                self._frame(0x8A, payload)
+                continue
+            if (b1 & 0x0F) == 10:  # pong
                 continue
             msg += payload
             if b1 & 0x80:
                 return json.loads(msg)
 
     def send(self, obj):
-        data = json.dumps(obj).encode()
+        self._frame(0x81, json.dumps(obj).encode())
+
+    def _frame(self, first, data):
         mask = os.urandom(4)
-        head = bytearray([0x81])
+        head = bytearray([first])
         if len(data) < 126:
             head.append(0x80 | len(data))
         elif len(data) < 65536:
@@ -67,7 +74,8 @@ class WS:
         else:
             head.append(0x80 | 127)
             head += struct.pack(">Q", len(data))
-        self.sock.sendall(bytes(head) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+        with self._send_lock:
+            self.sock.sendall(bytes(head) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
 
     def call(self, msg_type, **kwargs):
         """Send one command and return its result ({"__error__": ...} on failure)."""

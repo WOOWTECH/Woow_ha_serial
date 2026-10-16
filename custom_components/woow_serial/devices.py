@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -28,8 +28,8 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
 from .bus import BusFrame, FrameBus
-from .codec import parse_hex, to_hex
-from .const import DOMAIN, EVENT_BUTTON, LIVE_PUSH
+from .codec import to_hex
+from .const import DOMAIN, EVENT_BUTTON, KIND_EXTERNAL, LIVE_PUSH, REPLY_WINDOW, REPLY_WINDOW_EXTERNAL
 from .template import Pattern, TemplateError, fields_used, render
 
 if TYPE_CHECKING:
@@ -60,6 +60,7 @@ DEFAULT_RANGE = [0, 100]
 _CAPTURE_REF = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 SENSOR_MIN_INTERVAL = 1.0  # s between state writes of one sensor
 TOGGLE = "toggle"  # binding action: turn_off when the target is on, turn_on otherwise
+SENT_MEMORY = 3.0  # s: our own frames are known pieces for this long (a device's echo of them)
 LOOP_LIMIT, LOOP_WINDOW, LOOP_PAUSE = 10, 5.0, 60.0  # a binding firing this often is paused (runaway guard)
 ALIAS_HISTORY = 10
 
@@ -94,17 +95,24 @@ class Command:
     repeat: int = 1
     gap_ms: int = 100  # between repeats
     wait_ms: int = 0  # wait for a reply after the last repeat (queries)
+    then: str = ""  # a command id sent then_ms later, usually a query: a set command many devices only ack
+    then_ms: int = 500
 
 
 @dataclass
 class Rule:
-    """When a received frame matches `pattern`, set `field` to `value` (a literal or "{capture}")."""
+    """When a received frame matches `pattern`, set `field` to `value` (a literal or "{capture}").
+
+    With `reply_to` (a command id) only the reply to that command counts: Modbus answers a read
+    without naming the register, so a relay channel must not take another channel's answer.
+    """
 
     id: str
     pattern: str
     format: str = "hex"
     field: str = "power"
     value: str = ""
+    reply_to: str = ""
 
 
 @dataclass
@@ -121,6 +129,7 @@ class SensorDef:
     unit: str = ""
     device_class: str = ""
     precision: int | None = None
+    reply_to: str = ""  # a command id: only that command's reply (see Rule)
 
 
 @dataclass
@@ -164,6 +173,7 @@ class Device:
     ranges: dict[str, list[float]] = field(default_factory=dict)  # field -> [device value at 0, at full]
     poll_command: str = ""
     poll_interval: int = 0  # s; 0 = no polling
+    created: float = 0.0  # epoch s of the first save: entities restore only state written after it
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Device:
@@ -195,11 +205,17 @@ def to_device(device: Device, name: str, ha_value: float) -> int:
     return round(low + (high - low) * max(0.0, min(1.0, ha_value / HA_SCALE[name])))
 
 
-def from_device(device: Device, name: str, raw: float) -> float:
+def from_device(device: Device, name: str, raw: float) -> float | None:
+    """A device value on Home Assistant's scale. A position or brightness outside the device's range is
+    not one (Dooya motors answer FF before their limits are set): None. A volume past it is the limit."""
     low, high = device.range(name)
     if high == low:
         return 0.0
-    share = max(0.0, min(1.0, (raw - low) / (high - low)))
+    share = (raw - low) / (high - low)
+    if not 0.0 <= share <= 1.0:
+        if name != "volume":
+            return None
+        share = max(0.0, min(1.0, share))
     value = share * HA_SCALE[name]
     return value if name == "volume" else round(value)
 
@@ -230,13 +246,9 @@ def validate(device: Device) -> None:
         raise DeviceError("bad_type", type=device.type)
     if not device.port_id:
         raise DeviceError("no_port")
-    for name, value in device.params.items():
+    for name in device.params:  # values are checked where they are used: HEX in HEX, any text in text
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
             raise DeviceError("bad_param_name", param=name)
-        try:
-            parse_hex(value)
-        except ValueError as err:
-            raise DeviceError("bad_param", param=name, value=value) from err
     variables = {**device.params, "value": 0}
     names = set()
     for command in device.commands:
@@ -255,6 +267,11 @@ def validate(device: Device) -> None:
         if not 1 <= command.repeat <= 20 or not 0 <= command.gap_ms <= 10000 or not 0 <= command.wait_ms <= 60000:
             raise DeviceError("command_limits", command=command.name)
     ids = {c.id for c in device.commands}
+    for command in device.commands:
+        if command.then and (command.then not in ids or command.then == command.id):
+            raise DeviceError("command_then", command=command.name)
+        if not 0 <= command.then_ms <= 60000:
+            raise DeviceError("command_limits", command=command.name)
     for action, command_id in device.actions.items():
         if action not in spec["actions"]:
             raise DeviceError("bad_action", action=action)
@@ -272,6 +289,8 @@ def validate(device: Device) -> None:
     for rule in device.rules:
         if rule.field not in spec["fields"]:
             raise DeviceError("rule_field", field=rule.field)
+        if rule.reply_to and rule.reply_to not in ids:
+            raise DeviceError("rule_reply_to")
         pattern = _pattern(rule.pattern, rule.format, device.params, "rule")
         for ref in _CAPTURE_REF.findall(rule.value):
             if ref not in _captures(pattern):
@@ -282,6 +301,8 @@ def validate(device: Device) -> None:
         pattern = _pattern(sensor.pattern, sensor.format, device.params, "sensor", sensor=sensor.name)
         if sensor.capture not in _captures(pattern):
             raise DeviceError("sensor_capture", sensor=sensor.name, capture=sensor.capture)
+        if sensor.reply_to and sensor.reply_to not in ids:
+            raise DeviceError("sensor_reply_to", sensor=sensor.name)
     if device.buttons and not spec.get("buttons"):
         raise DeviceError("no_buttons_for_type")
     button_names = set()
@@ -348,9 +369,13 @@ class DeviceManager:
         self._live: dict[str, list[Entity]] = {}  # device id -> entity objects in Home Assistant
         self._entity_listeners: dict[str, list[Callable[[], None]]] = {}
         self._polls: dict[str, CALLBACK_TYPE] = {}
+        # port id -> (device id, command id, reply deadline): the next frame there answers that command
+        self._expect: dict[str, tuple[str, str, float]] = {}
+        self._sent_recently: dict[str, list[tuple[float, bytes]]] = {}  # port id -> our frames (echoes)
         self._feed: list[Callable[[str, dict[str, Any]], None]] = []
         self._dirty_state: set[str] = set()
         self._push_handle: asyncio.TimerHandle | None = None
+        self.activity = None  # ActivityLog, set by the admin hub
 
     # ---- persistence / lifecycle --------------------------------------------------------
     async def async_load(self) -> None:
@@ -486,6 +511,7 @@ class DeviceManager:
         validate(device)
         self._check_bindings(device)
         old = self.devices.get(device.id)
+        device.created = old.created if old is not None else (device.created or time.time())
         for button in device.buttons:
             before = old.button(button.id) if old else None
             if before is not None and before.name != button.name:  # a rename keeps the old name findable
@@ -534,32 +560,56 @@ class DeviceManager:
         return hub
 
     async def async_run(self, device: Device, command: Command, variables: dict[str, Any] | None = None,
-                        origin: str | None = None) -> tuple[Any, Any]:
-        """Send one command (all its repeats); return (what was sent, the reply or None)."""
+                        origin: str | None = None, follow: bool = True) -> tuple[Any, Any]:
+        """Send one command (all its repeats), then its follow-up; return (what was sent, the reply or None)."""
         hub = self._port(device)
         try:
             payload = render(command.payload, command.format, {**device.params, **(variables or {})})
         except TemplateError as err:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="bad_template",
                                      translation_placeholders={"name": command.name, "error": str(err)}) from err
-        origin = origin or f"device:{device.id}"
+        origin = origin or f"device:{device.id}:{command.id}"  # on_sent reads it back to know who asked
         reply = None
         for attempt in range(max(1, command.repeat)):
             if attempt:
                 await asyncio.sleep(command.gap_ms / 1000)
             wait = command.wait_ms / 1000 if attempt == command.repeat - 1 else 0
             reply = await hub.async_send(payload, wait, origin=origin)
+        then = device.command(command.then) if follow and command.then else None
+        if then is not None:
+            self.hass.async_create_background_task(self._async_then(device, then, command.then_ms / 1000),
+                                                   f"woow_serial then {device.name}: {then.name}")
         return payload, reply
 
-    async def async_command(self, device_id: str, command_id: str, value: float | None = None) -> tuple[Any, Any]:
+    async def _async_then(self, device: Device, command: Command, delay: float) -> None:
+        """A command's follow-up (one level: its own follow-up is not sent)."""
+        await asyncio.sleep(delay)
+        if self.devices.get(device.id) is not device:
+            return  # edited or deleted meanwhile
+        try:
+            await self.async_run(device, command, follow=False)
+        except HomeAssistantError as err:
+            _LOGGER.debug("%s: follow-up %s failed: %s", device.name, command.name, err)
+
+    async def async_command(self, device_id: str, command_id: str, value: float | None = None,
+                            context: Context | None = None) -> tuple[Any, Any]:
         device = self.devices[device_id]
         command = device.command(command_id)
         if command is None:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="not_mapped",
                                      translation_placeholders={"name": device.name, "action": command_id})
-        return await self.async_run(device, command, {} if value is None else {"value": value})
+        result = await self.async_run(device, command, {} if value is None else {"value": value})
+        await self._async_log(context, device, "entity_command", command=command.name)
+        return result
 
-    async def async_action(self, device_id: str, action: str, ha_value: float | None = None) -> None:
+    async def _async_log(self, context: Context | None, device: Device, msg: str, ok: bool = True, **args: Any) -> None:
+        """Entity actions are logged when a person or an agent token is behind them (not automations)."""
+        if self.activity is not None and context is not None and context.user_id:
+            await self.activity.async_record("entity", "entity_action", msg, {"device": device.name, **args},
+                                             context=context, ok=ok, device_id=device.id, port_id=device.port_id)
+
+    async def async_action(self, device_id: str, action: str, ha_value: float | None = None,
+                           context: Context | None = None) -> None:
         """Run the command mapped to an entity action, then show what it implies."""
         device = self.devices[device_id]
         command = device.command(device.actions.get(action, ""))
@@ -570,10 +620,17 @@ class DeviceManager:
         name = VALUE_ACTIONS.get(action)
         if name is not None and ha_value is not None:
             variables["value"] = to_device(device, name, ha_value)
-        await self.async_run(device, command, variables)
+        suffix = f" {round(ha_value, 3)}" if ha_value is not None else ""
+        try:
+            await self.async_run(device, command, variables)
+        except HomeAssistantError as err:
+            await self._async_log(context, device, "entity_action_failed", ok=False, action=action, value=suffix,
+                                  error=str(err))
+            raise
+        await self._async_log(context, device, "entity_action", action=action, value=suffix)
         self.update_state(device_id, self._implied(device, action, ha_value))
 
-    async def async_option(self, device_id: str, option: str, name: str) -> None:
+    async def async_option(self, device_id: str, option: str, name: str, context: Context | None = None) -> None:
         """Pick a source / option by running its command."""
         device = self.devices[device_id]
         chosen = next((o for o in device.options if o.name == option), None)
@@ -582,6 +639,7 @@ class DeviceManager:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="not_mapped",
                                      translation_placeholders={"name": device.name, "action": option})
         await self.async_run(device, command)
+        await self._async_log(context, device, "entity_option", field=name, option=option)
         self.update_state(device_id, {name: option} if not self.has_feedback(device_id, name) else {})
 
     def _implied(self, device: Device, action: str, ha_value: float | None) -> dict[str, Any]:
@@ -601,7 +659,76 @@ class DeviceManager:
 
     # ---- receiving ----------------------------------------------------------------------
     @callback
+    def on_sent(self, frame: BusFrame) -> None:
+        """A frame went out: if a device's command sent it, the next frame on that port answers it.
+        Set when the bytes leave (not when the command is asked for), so a command queued behind
+        another one's wait never takes that one's answer."""
+        now = time.monotonic()
+        recent = [(t, d) for t, d in self._sent_recently.get(frame.port_id, []) if now - t < SENT_MEMORY]
+        self._sent_recently[frame.port_id] = [*recent[-7:], (now, frame.data)]
+        parts = (frame.origin or "").split(":")
+        if len(parts) != 3 or parts[0] != "device" or (device := self.devices.get(parts[1])) is None:
+            self._expect.pop(frame.port_id, None)
+            return
+        command = device.command(parts[2])
+        hub = self.bus.ports.get(frame.port_id)
+        window = max(command.wait_ms / 1000 if command else 0,
+                     REPLY_WINDOW_EXTERNAL if hub is not None and hub.kind == KIND_EXTERNAL else REPLY_WINDOW)
+        self._expect[frame.port_id] = (device.id, parts[2], time.monotonic() + window)
+
+    def _reply_to(self, port_id: str) -> tuple[str, str] | None:
+        """(device id, command id) when this frame is the first one after a device's command."""
+        expect = self._expect.pop(port_id, None)
+        if expect is None or time.monotonic() > expect[2]:
+            return None
+        return expect[0], expect[1]
+
+    def split(self, port_id: str, data: bytes) -> list[bytes]:
+        """The frame, or the frames it is made of when several arrived joined: an HA-WF485-V3 joins
+        frames less than ~0.1 s apart, and a keypad may send a press twice back to back. Pieces are
+        cut where the HEX patterns of the devices on the port (and our own recent sends, which a
+        device echoes) say a frame ends; a frame is only split if every byte lands in a piece."""
+        patterns: list[Pattern] = []
+        for device in self.devices.values():
+            if device.port_id == port_id:
+                rules, sensors, buttons = self._compiled.get(device.id, ([], [], []))
+                patterns += [p for _, p in (*rules, *sensors, *buttons)]
+        if not patterns or any(p.match(data) is not None for p in patterns):
+            return [data]
+        known = [p for p in patterns if p.length]
+        echoes = {d for _, d in self._sent_recently.get(port_id, [])}
+        lengths = sorted({p.length for p in known} | {len(d) for d in echoes}, reverse=True)
+        if not lengths or len(data) < 2 * min(lengths):
+            return [data]
+        dead: set[int] = set()  # positions from which the rest cannot be covered
+
+        def cover(pos: int) -> list[bytes] | None:
+            if pos == len(data):
+                return []
+            if pos in dead:
+                return None
+            for length in lengths:
+                piece = data[pos:pos + length]
+                if len(piece) == length and (piece in echoes or any(
+                        p.length == length and p.match(piece) is not None for p in known)):
+                    rest = cover(pos + length)
+                    if rest is not None:
+                        return [piece, *rest]
+            dead.add(pos)
+            return None
+
+        pieces = cover(0)
+        return pieces if pieces and len(pieces) > 1 else [data]
+
+    @callback
     def on_frame(self, frame: BusFrame) -> None:
+        reply_to = self._reply_to(frame.port_id)
+        for index, data in enumerate(self.split(frame.port_id, frame.data)):
+            piece = frame if len(data) == len(frame.data) else BusFrame(frame.port_id, frame.direction, data,
+                                                                          frame.origin, frame.time)
+            self._dispatch(piece, reply_to if index == 0 else None)
+
+    def _dispatch(self, frame: BusFrame, reply_to: tuple[str, str] | None) -> None:
         for device in self.devices.values():
             if device.port_id != frame.port_id:
                 continue
@@ -612,12 +739,16 @@ class DeviceManager:
                     self._press(device, button, frame, found)
             changes: dict[str, Any] = {}
             for rule, pattern in rules:
+                if rule.reply_to and reply_to != (device.id, rule.reply_to):
+                    continue
                 found = pattern.match(frame.data)
                 if found is not None:
                     value = self._rule_value(device, rule, found)
                     if value is not None:
                         changes[rule.field] = value
             for sensor, pattern in sensors:
+                if sensor.reply_to and reply_to != (device.id, sensor.reply_to):
+                    continue
                 found = pattern.match(frame.data)
                 if found is None or not isinstance(found.get(sensor.capture), (int, float)):
                     continue
@@ -724,7 +855,7 @@ class DeviceManager:
 
         async def tick(_now: Any) -> None:
             try:
-                await self.async_run(device, command, origin=f"device:{device.id}")
+                await self.async_run(device, command)
             except HomeAssistantError as err:
                 _LOGGER.debug("%s: poll failed: %s", device.name, err)
 

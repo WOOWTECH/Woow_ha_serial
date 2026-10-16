@@ -415,6 +415,13 @@ export class WoowBusDeviceEditor extends LitElement {
             <span>${t("wait_reply")}</span>
             <input class="small" type="number" min="0" max="60000" step="100" .value=${String(c.wait_ms)}
               @input=${(e: Event) => edit(i, (x) => (x.wait_ms = Math.max(0, num(e))))} />
+            <span title=${t("then_hint")}>${t("then")}</span>
+            ${this.commandSelect(c.then ?? "", (id) => edit(i, (x) => (x.then = id)), t("nothing"))}
+            ${c.then
+              ? html`<input class="tiny" type="number" min="0" max="60000" step="100" title=${t("then_ms")}
+                  .value=${String(c.then_ms ?? 500)} @input=${(e: Event) => edit(i, (x) => (x.then_ms = Math.max(0, num(e, 500))))} />
+                  <span>ms</span>`
+              : nothing}
             <span class="grow"></span>
             <button class="link" @click=${() => this.test(c)}>${t("test")}</button>
             <button class="link danger" @click=${() =>
@@ -423,6 +430,8 @@ export class WoowBusDeviceEditor extends LitElement {
                 x.actions = Object.fromEntries(Object.entries(x.actions).filter(([, id]) => id !== c.id));
                 x.options = x.options.filter((o) => o.command !== c.id);
                 if (x.poll_command === c.id) x.poll_command = "";
+                for (const other of x.commands) if (other.then === c.id) other.then = "";
+                for (const item of [...x.rules, ...x.sensors]) if (item.reply_to === c.id) item.reply_to = "";
               })}>${t("remove")}</button>
           </div>
           ${preview?.error
@@ -434,7 +443,7 @@ export class WoowBusDeviceEditor extends LitElement {
       })}
       <button @click=${() => {
         const command: Command = {
-          id: newId(), name: "", payload: "", format: "hex", repeat: 1, gap_ms: 100, wait_ms: 0,
+          id: newId(), name: "", payload: "", format: "hex", repeat: 1, gap_ms: 100, wait_ms: 0, then: "", then_ms: 500,
         };
         this.change((x) => x.commands.push(command));
       }}>${t("add_command")}</button>
@@ -586,6 +595,8 @@ export class WoowBusDeviceEditor extends LitElement {
             </select>
             <span class="muted">${t("value")}</span>
             <input class="small mono" placeholder=${t("value_hint")} title=${t("value_hint")} .value=${r.value} @input=${(e: Event) => edit((x) => (x.value = val(e)))} />
+            <span class="muted" title=${t("reply_to_hint")}>${t("reply_to")}</span>
+            ${this.commandSelect(r.reply_to ?? "", (id) => edit((x) => (x.reply_to = id)), t("any_frame"))}
             <span class="grow"></span>
             <button class="link" @click=${() => this.tryPattern(r.id, r.pattern, r.format)}>${t("try_pattern")}</button>
             <button class="link danger" @click=${() => this.change((x) => x.rules.splice(i, 1))}>${t("remove")}</button>
@@ -595,7 +606,7 @@ export class WoowBusDeviceEditor extends LitElement {
       })}
       <button @click=${() =>
         this.change((x) =>
-          x.rules.push({ id: newId(), pattern: "", format: "hex", field: fields[0], value: "" }),
+          x.rules.push({ id: newId(), pattern: "", format: "hex", field: fields[0], value: "", reply_to: "" }),
         )}>${t("add_rule")}</button>
     </div>`;
   }
@@ -628,6 +639,8 @@ export class WoowBusDeviceEditor extends LitElement {
             <span>${t("precision")}</span>
             <input class="tiny" type="number" min="0" max="6" .value=${s.precision === null ? "" : String(s.precision)}
               @input=${(e: Event) => edit((x) => (x.precision = val(e) === "" ? null : Math.max(0, Math.round(num(e)))))} />
+            <span title=${t("reply_to_hint")}>${t("reply_to")}</span>
+            ${this.commandSelect(s.reply_to ?? "", (id) => edit((x) => (x.reply_to = id)), t("any_frame"))}
             <span class="grow"></span>
             <button class="link" @click=${() => this.tryPattern(s.id, s.pattern, s.format)}>${t("try_pattern")}</button>
             <button class="link danger" @click=${() => this.change((x) => x.sensors.splice(i, 1))}>${t("remove")}</button>
@@ -639,7 +652,7 @@ export class WoowBusDeviceEditor extends LitElement {
         this.change((x) =>
           x.sensors.push({
             id: newId(), name: "", pattern: "", format: "hex", capture: "value",
-            scale: 1, offset: 0, unit: "", device_class: "", precision: null,
+            scale: 1, offset: 0, unit: "", device_class: "", precision: null, reply_to: "",
           }),
         )}>${t("add_sensor")}</button>
     </div>`;
