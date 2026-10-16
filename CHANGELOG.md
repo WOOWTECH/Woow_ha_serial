@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 — 2026-10-16
+
+- The HACS validation now runs with no check ignored: the brand images ship in `brand/`. Prepared for the HACS default list; no change to the integration itself.
+
 ## 0.5.1 — 2026-10-16
 
 - WOOWTECH brand images (`brand/`): Home Assistant 2026.x shows a custom integration's own icon and logo.
